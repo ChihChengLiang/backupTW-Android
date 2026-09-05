@@ -55,6 +55,9 @@
             pkgs.rustup
             pkgs.cargo-ndk
             pkgs.pkg-config
+            # For compiling the OpenACAge zkID circuits (jwt_2k/show) via
+            # circomkit before the Android Mopro build can run.
+            pkgs.circom
           ];
 
           shellHook = ''
@@ -73,6 +76,8 @@
             for target in aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android; do
               rustup target add "$target" >/dev/null 2>&1 || true
             done
+            corepack enable --install-directory "$HOME/.local/bin" >/dev/null 2>&1 || true
+            export PATH="$HOME/.local/bin:$PATH"
             echo "Android SDK ready at $ANDROID_HOME"
             echo "Android NDK ready at $ANDROID_NDK_HOME"
             echo "Rust: $(rustc --version 2>/dev/null || echo 'not yet installed, run once more')"
