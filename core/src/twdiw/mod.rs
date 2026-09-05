@@ -19,6 +19,7 @@ pub mod credential_offer;
 pub mod issuer_authorization;
 pub mod moda_card_application;
 pub mod onchain;
+pub mod telecom_card_catalog;
 
 pub use collection::{
     assemble_proof_jwt, canonical_issuer_identifier, credential_bound_to, form_encode,
@@ -35,4 +36,7 @@ pub use moda_card_application::ModaCardApplication;
 pub use onchain::{
     check as check_on_chain_record, current_record_call_data, decode_current_record,
     decode_registry_input, is_infrastructure_error, CurrentRegistryRecord, RegistryInput,
+};
+pub use telecom_card_catalog::{
+    telecom_cards_from_vc_list_json, TelecomCard, TelecomCardCatalogError,
 };
