@@ -4,11 +4,12 @@
 //! Ported from `backupTW-iOS/backupTW/TWDIW/{CredentialOffer,
 //! IssuerAuthorization}.swift`. Scoped to the *receive* path (Phase 4's
 //! vertical slice needs "receive one credential") - `OID4VPPresentation`
-//! (the online-presentation coordinator) and `ConvenienceStorePickup` are
-//! a separate area, not yet ported. `OID4VPRequest` (what a verifier
-//! asked for) and `OID4VPResponse`'s pure pieces (the `vp_token`,
-//! selective-disclosure reserialisation, and the DIF submission) are
-//! ported, in `oid4vp_request`/`oid4vp_response`.
+//! (the online-presentation coordinator) is a separate area, not yet
+//! ported. `OID4VPRequest` (what a verifier asked for), `OID4VPResponse`'s
+//! pure pieces (the `vp_token`, selective-disclosure reserialisation, and
+//! the DIF submission), and `ConvenienceStorePickup`'s pure response
+//! parsing are ported, in `oid4vp_request`/`oid4vp_response`/
+//! `convenience_store_pickup`.
 //!
 //! The actual network calls, Keystore-backed proof signing, and credential
 //! storage stay native by design
@@ -17,6 +18,7 @@
 //! orchestration itself.
 
 pub mod collection;
+pub mod convenience_store_pickup;
 pub mod credential;
 pub mod credential_offer;
 pub mod issuer_authorization;
@@ -29,6 +31,11 @@ pub mod telecom_card_catalog;
 pub use collection::{
     assemble_proof_jwt, canonical_issuer_identifier, credential_bound_to, form_encode,
     proof_signing_input, ProofClaims,
+};
+pub use convenience_store_pickup::{
+    credential_serial, parse_barcode, parse_start, scenarios as convenience_store_scenarios,
+    ConvenienceStorePickupBarcode, ConvenienceStorePickupCountdown, ConvenienceStorePickupError,
+    ConvenienceStorePickupScenario, SEVEN_ELEVEN_VP_UID, TELECOM_CREDENTIAL_TYPES,
 };
 pub use credential::{
     read as read_credential, TwdiwCredential, TwdiwCredentialError, TwdiwStatusListEntry,
