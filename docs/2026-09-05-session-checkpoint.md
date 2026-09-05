@@ -199,15 +199,47 @@ open.
    pushed) — project owner wants commits accumulated to a reasonable
    size before opening a PR, not pushed straight to `main` piecemeal.
 
-   **Not yet done:** the actual Android cross-compile
-   (`cargo build --release --bin android` via `cargo-ndk`, which will
-   need the same GMP/witnesscalc C/C++ build but cross-compiled through
-   the NDK toolchain — untested, likely its own round of fixes) and
-   validating proving/verification through the generated
-   Kotlin/JNI bindings on-device or on an emulator. That instrumented
-   JVM harness is still Phase 1's actual stated exit criterion; the
-   native run above de-risks the crypto/circuit side of it but isn't
-   the same as Kotlin-side validation.
+   **Android cross-compile: done (2026-09-05, same session).**
+   `cargo build --release --bin android` via `cargo-ndk`, `arm64-v8a`
+   only so far (`ANDROID_ARCHS=aarch64-linux-android`; the other 3 ABIs
+   are presumably the same fix, not yet run). Produced
+   `wallet-unit-poc/mobile/MoproAndroidBindings/`:
+   `jniLibs/arm64-v8a/libopenac_age_mobile_app.so` (the whole Rust
+   core — circuits + witnesscalc + the Spartan2 stack — cross-compiled
+   via the NDK), `jniLibs/arm64-v8a/libc++_shared.so`, and
+   `uniffi/mopro/mopro.kt` (generated Kotlin FFI bindings).
+
+   Two real upstream bugs found and worked around in `mopro-ffi`
+   0.3.5's `src/app_config/android.rs` (patched directly in the local
+   `~/.cargo/registry` checkout — **not** a durable fix, needs a
+   proper `[patch]`/fork if this is going to be relied on repeatedly):
+   - `build_for_arch`'s `out_lib_path` joined `build_dir` twice
+     (`build_dir.join(format!("{}/{}/{}/{}", build_dir.display(), ...))`),
+     so the post-`cargo ndk` `fs::copy` of the built `.so` always
+     failed with ENOENT even though `cargo-ndk` itself had already
+     correctly placed the library. Fix: drop the redundant
+     `build_dir.display()` from the format string.
+   - The crate's own `[profile.release]` sets `strip = true`. Stripped
+     symbols include the UniFFI metadata `library_mode::generate_bindings`
+     needs to introspect the built `.so`; with it stripped,
+     `find_components` silently returns zero components, so
+     `write_bindings` "succeeds" having written nothing, and the next
+     step (`reformat_kotlin_package`) then fails trying to create a
+     `uniffi/<module>/` dir that was never created — a confusing
+     downstream symptom for an upstream (root) cause. Worked around
+     with `CARGO_PROFILE_RELEASE_STRIP=false` for this build only, not
+     a change to the crate itself.
+
+   **Not yet done:** validating proving/verification through these
+   Kotlin bindings in an actual JVM/instrumented harness. That's
+   Phase 1's real stated exit criterion — the native run and the
+   successful cross-compile de-risk the crypto/circuit and FFI-linkage
+   sides respectively, but neither is the same as Kotlin-side
+   validation. No `android/` Gradle/Compose scaffolding exists in this
+   repo yet (still Phase 0-deferred per
+   `docs/2026-09-05-decisions-and-roadmap.md`), so standing up even a
+   minimal JVM harness to load `mopro.kt` + the `.so` and replay
+   `age_assets.rs`'s fixed vectors is new scope, not just a build fix.
 6. Spike the MOICA Android App-to-App intent contract via MOI's
    integrator zone (fido.moi.gov.tw/pt/agency) or contact info, in
    parallel with building the QR-first flow — not blocking, but don't
