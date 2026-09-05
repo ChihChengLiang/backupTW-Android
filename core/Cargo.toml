@@ -10,5 +10,8 @@ crate-type = ["lib"]
 p256 = { version = "0.13", features = ["ecdsa"] }
 base64 = "0.22"
 serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
+unicode-general-category = "1.1.0"
+sha2 = "0.10"
 
