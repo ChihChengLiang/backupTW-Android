@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "android": {
+      "command": "npx",
+      "args": ["-y", "mobile-mcp"]
+    }
+  }
+}
