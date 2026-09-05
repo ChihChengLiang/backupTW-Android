@@ -25,7 +25,7 @@ pub const MAXIMUM_VALUE_LENGTH: usize = 120;
 /// The longest field *name*.
 pub const MAXIMUM_TERM_LENGTH: usize = 40;
 
-fn is_unsafe(c: char) -> bool {
+pub(crate) fn is_unsafe(c: char) -> bool {
     matches!(
         get_general_category(c),
         GeneralCategory::Control | GeneralCategory::Format
