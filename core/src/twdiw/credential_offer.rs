@@ -5,7 +5,7 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use url::Url;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum CredentialOfferError {
     /// Not an `openid-credential-offer` link at all.
     #[error("not a credential offer")]
@@ -36,7 +36,7 @@ pub enum CredentialOfferError {
 }
 
 /// The two ways an offer link can carry its offer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum CredentialOfferLink {
     /// `credential_offer_uri=…` — a URL to fetch the offer from.
     ByReference { fetch_url: String },
@@ -152,7 +152,7 @@ fn base64url_decode(s: &str) -> Option<Vec<u8>> {
 }
 
 /// One parsed credential offer, reduced to what collection needs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CredentialOffer {
     /// The issuer identifier the offer names. **Untrusted** until
     /// `issuer_authorization::confirm` has agreed it belongs to the

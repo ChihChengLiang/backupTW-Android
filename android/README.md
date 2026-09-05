@@ -6,13 +6,22 @@ described in `docs/2026-09-05-decisions-and-roadmap.md`:
 - **`app/` (`zkharness`)** — Phase 1's validation harness. Proves the
   OpenACAge Mopro ZK bindings work when loaded and run inside a real
   Android runtime.
-- **`wallet/`** — a minimal proof that `core/`'s hand-written Rust, exposed
-  through UniFFI, works end-to-end on Android: one screen, one button,
-  generates a `did:key` identity and shows both spellings. Phase 4's first
-  vertical-slice step and nothing past it — no storage, no navigation, no
-  design system. See `core/src/ffi.rs`'s doc comment for why the key is
-  ephemeral (Keystore-backed generation, the real design, needs a
-  trait/callback boundary this doesn't build yet).
+- **`wallet/`** — a fixture-driven proof that `core/`'s hand-written Rust,
+  exposed through UniFFI, works end-to-end on Android: one screen, four
+  sections, no navigation, no storage, no design system. (1) generates a
+  `did:key` identity and shows both spellings; (2) parses a bundled
+  fixture TWDIW credential offer and trust-list page and runs the three
+  issuer-authorization gates; (3) generates an in-memory P-256 key
+  (`HolderKey.kt` — real ECDSA signing via the JCA `Signature` API, DER→raw
+  `r ‖ s` conversion, same shape real Android Keystore signing will need)
+  and builds/signs a real OID4VCI proof JWT; (4) reads and cryptographically
+  verifies a bundled fixture TWDIW SD-JWT credential and displays its
+  disclosed claims. See `core/src/ffi.rs`'s doc comment for why keys
+  throughout are ephemeral/in-memory (Keystore-backed generation, the real
+  design, needs a trait/callback boundary this doesn't build yet) and
+  `Fixtures.kt` for why nothing here makes a live network call (no TWDIW
+  sandbox endpoint is wired up - the three steps are proven independently
+  against bundled data, not chained into one continuous live flow).
 
 When Phase 4 starts the real app shell, expect both modules' package
 names, `minSdk`, and structure to be revisited from scratch per the open
@@ -49,9 +58,18 @@ gradle :wallet:assembleDebug
 adb install -r wallet/build/outputs/apk/debug/wallet-debug.apk
 ```
 
-Confirmed working 2026-09-05: launches with no crash, generates a `did:key`
-on tap, on both the x86_64 API 34 emulator and (arm64-v8a build) a real
-device.
+Confirmed working 2026-09-05: launches with no crash, all four sections
+produce real (non-crashing, non-placeholder) output on the x86_64 API 34
+emulator - identity generation, the three-gate offer evaluation (all pass
+against the bundled fixture issuer), a real signed three-segment proof
+JWT, and a verified fixture credential with its disclosed claims shown.
+
+⚠️ **Testing note**: this screen scrolls, and each button's on-screen
+position moves down as earlier sections' results are added above it. A
+tap at a coordinate that hit a button before the screen had content will
+silently miss (or hit a different button) after it does - `adb shell
+uiautomator dump` before each tap, or scroll to a known position first,
+rather than reusing coordinates across state changes.
 
 ## `app/` (zkharness): regenerating the native library + bindings
 

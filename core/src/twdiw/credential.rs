@@ -65,7 +65,7 @@ pub enum TwdiwCredentialError {
 }
 
 /// `vc.credentialStatus`, a StatusList2021 entry.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct TwdiwStatusListEntry {
     pub status_list_url: String,
     pub index: i64,
