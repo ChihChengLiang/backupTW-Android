@@ -230,16 +230,62 @@ open.
      with `CARGO_PROFILE_RELEASE_STRIP=false` for this build only, not
      a change to the crate itself.
 
-   **Not yet done:** validating proving/verification through these
-   Kotlin bindings in an actual JVM/instrumented harness. That's
-   Phase 1's real stated exit criterion — the native run and the
-   successful cross-compile de-risk the crypto/circuit and FFI-linkage
-   sides respectively, but neither is the same as Kotlin-side
-   validation. No `android/` Gradle/Compose scaffolding exists in this
-   repo yet (still Phase 0-deferred per
-   `docs/2026-09-05-decisions-and-roadmap.md`), so standing up even a
-   minimal JVM harness to load `mopro.kt` + the `.so` and replay
-   `age_assets.rs`'s fixed vectors is new scope, not just a build fix.
+   **Phase 1 exit criterion: met (2026-09-05, same session).** Added
+   `android/` — a minimal single-Activity harness (**not** the Phase 4
+   app shell, see `android/README.md` for that distinction), whose
+   `MainActivity` replays `age_assets.rs`'s fixed vector through the
+   Kotlin/UniFFI bindings. Required: an x86_64 API 34 AVD (created and
+   booted headless for the first time this session — boots in ~40s on
+   this box's KVM, no issues), a second cross-compile targeting
+   `x86_64-linux-android` (arm64-v8a alone isn't enough since a plain
+   host JVM can't load either — needs a real Android runtime, hence
+   the emulator).
+
+   Result, on-device, via the generated Kotlin API (not the Rust
+   binary): **`RESULT: PASS (prepare=7549ms show=237ms)`** — setup,
+   prove, reblind, and verify all succeeded end-to-end through the JNI
+   boundary. This is the actual stated Phase 1 exit criterion; the
+   earlier native run and successful cross-compile de-risked the
+   crypto/circuit and FFI-linkage sides respectively, but this is the
+   first point Kotlin-side validation actually happened.
+
+   Three more real bugs found and fixed/documented (detail in
+   `android/README.md`):
+   - `cargo-ndk`/`mopro-ffi` only copies the final crate's own `.so`
+     into `jniLibs/` — not `libwitnesscalc_jwt_2k.so`/
+     `libwitnesscalc_show.so`, which `ecdsa-spartan2` also builds
+     (dynamically linked, loaded at runtime) but leaves buried under
+     `target/<abi>/release/build/.../out/witnesscalc/package/lib/`.
+     Missing them produces a generic-looking `SynthesisError` with no
+     hint it's a missing-library problem.
+   - Generated `mopro.kt` (UniFFI 0.29) has each `ZkProofException`
+     subclass declare both a constructor `val message: String` *and* a
+     separate `override val message` getter — a genuine Kotlin name
+     collision (not a compiler-version strictness issue), hand-patched
+     (constructor property marked `override`, redundant getter
+     dropped).
+   - Files pushed into `Android/data/<pkg>/...` (external storage) via
+     plain `adb shell mkdir`/`push` end up owned by `shell` and are
+     invisible to the app's own process under scoped storage's per-app
+     FUSE isolation — `ls`/POSIX permissions look completely normal,
+     but `File.exists()` from inside the app returns `false`. Fixed by
+     using internal storage (`filesDir`) instead, staged via
+     `adb push` to `/data/local/tmp` + `run-as cp` into place.
+
+   Generated artifacts (`jniLibs/*.so`, `uniffi/mopro/mopro.kt`,
+   ~50MB) are gitignored, not committed — matches the project's
+   existing practice of not vendoring large generated ZK artifacts
+   (r1cs/keys aren't committed either, see
+   `backupTW-iOS/Native/OpenACAge/README.md`).
+
+   **Still open:** only `arm64-v8a`/`x86_64` built so far, not
+   `armv7`/`i686`; nothing automates the zkID-clone → overlay → compile
+   → cross-compile → copy-into-android/ pipeline (it's still the exact
+   manual command sequence run this session); and the Spartan2
+   zero-knowledge question
+   (`docs/2026-09-05-spartan2-zk-property-unverified.md`) is unrelated
+   to and unresolved by any of this — a *correct* verdict from a
+   non-hiding proof system would still show `RESULT: PASS` here.
 6. Spike the MOICA Android App-to-App intent contract via MOI's
    integrator zone (fido.moi.gov.tw/pt/agency) or contact info, in
    parallel with building the QR-first flow — not blocking, but don't
