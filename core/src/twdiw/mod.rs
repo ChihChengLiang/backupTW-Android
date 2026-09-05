@@ -13,9 +13,14 @@
 //! decision logic an orchestrator calls into at each step, not the
 //! orchestration itself.
 
+pub mod collection;
 pub mod credential_offer;
 pub mod issuer_authorization;
 
+pub use collection::{
+    assemble_proof_jwt, canonical_issuer_identifier, credential_bound_to, form_encode,
+    proof_signing_input, ProofClaims,
+};
 pub use credential_offer::{CredentialOffer, CredentialOfferError, CredentialOfferLink};
 pub use issuer_authorization::{
     MalformedPage, Refusal, TwdiwIssuer, TwdiwOnChainRecord, TwdiwOnChainVerification, Verdict,
