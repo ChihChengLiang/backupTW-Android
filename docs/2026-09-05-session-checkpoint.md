@@ -48,23 +48,91 @@ open.
 
 ## Open items for next session
 
-1. **Restart Claude Code (or reconnect the `aws-mcp` MCP server)** to
-   pick up the new config, then verify `mcp__aws-mcp__*` tools actually
-   appear and work — this was fixed but not yet end-to-end verified
-   inside a live MCP session.
+1. ~~Restart Claude Code (or reconnect the `aws-mcp` MCP server) to pick
+   up the new config, then verify `mcp__aws-mcp__*` tools actually
+   appear and work.~~ **Done (2026-09-05):** confirmed end-to-end in a
+   live session — `sts:GetCallerIdentity` and `ec2:DescribeRegions`
+   both succeeded under the `my-agent` profile. Note for future use:
+   `call_boto3`'s `operation_name` must be botocore CamelCase (e.g.
+   `GetCallerIdentity`), not the boto3 client's snake_case method name
+   (`get_caller_identity`) — the latter throws `OperationNotFoundError`.
 2. **GitHub write access for the agent is still not set up** — the
    user flagged this as needed early on; still pending as of this
    checkpoint.
-3. **The EC2 dev box hasn't been provisioned yet.** `infra/` has
-   working Terraform (`terraform apply` with `allowed_ssh_cidr` and
-   `git_repo_url` vars) but it has not been run. Phase 0 of the
-   roadmap isn't complete until this exists.
-4. Once the dev box + toolchain exist, start **Phase 1**: get the
+3. ~~The EC2 dev box hasn't been provisioned yet.~~ **Done
+   (2026-09-05):** applied via `terraform apply` (instance id
+   `i-061fb5a94405be5b8`, public IP `100.54.247.25`, `ssh
+   ubuntu@100.54.247.25`). Note: Terraform wasn't installed locally —
+   installed via `brew install hashicorp/tap/terraform` (the core-tap
+   `terraform` formula was removed after HashiCorp's license change).
+   Ran with `AWS_PROFILE=my-agent` explicitly since the `aws` provider
+   block in `main.tf` doesn't pin a profile. `allowed_ssh_cidr` was
+   set to the current public IP (`36.237.125.84/32`, via
+   `curl https://checkip.amazonaws.com`) — **re-derive this if the
+   apply is ever re-run from a different network**, don't reuse the
+   stale value.
+
+   Two real bugs found and fixed in `infra/` while bootstrapping (fixes
+   are in `user_data.sh.tpl`/`README.md`, but the *live* box needed
+   manual recovery since its user_data already ran and won't re-run on
+   its own):
+   - The Nix installer needs `$HOME` set; cloud-init runs `user_data`
+     as root with no `$HOME`, so it aborted the whole script (`set
+     -euxo pipefail`) partway through, before cloning the repo or
+     writing `BOOTSTRAP_DONE`. Fixed by exporting `HOME=/root` first.
+   - `git_repo_url` in SSH form (`git@github.com:...`) fails from
+     cloud-init — no access to a local `ssh-agent`, so it hits "Host
+     key verification failed." Since this repo is public, switched the
+     default/example to the HTTPS form and added
+     `--recurse-submodules` to the clone (the `backupTW-iOS` submodule
+     needs it too — its own URL was already HTTPS).
+
+   The live box was fixed by hand over SSH (re-ran the Nix installer
+   with `HOME=/root`, cloned the repo over HTTPS with
+   `--recurse-submodules`, wrote `BOOTSTRAP_DONE` manually) rather than
+   destroying/recreating — cheaper than a full replace, but means this
+   instance's actual boot history differs slightly from what a fresh
+   `terraform apply` with the fixed template would do.
+
+4. ~~`nix develop` hasn't been run/validated yet.~~ **Done
+   (2026-09-05):** `cd ~/project/infra && nix develop` now succeeds —
+   Android SDK (`build-tools`, `cmdline-tools`, `emulator`, `licenses`,
+   `platform-tools`, `platforms`, `system-images`) at `$ANDROID_HOME`,
+   JDK 17.0.15, Node v22.16.0, Gradle 8.10.2. `flake.lock` generated on
+   the box and copied back into `infra/` in the repo.
+
+   Note the path: `flake.nix` lives in `infra/`, not the repo root, so
+   it's `cd project/infra && nix develop`, **not** `cd project && nix
+   develop` as `README.md` / the `BOOTSTRAP_DONE` message currently
+   say — that's still wrong and should be fixed (either move
+   `flake.nix` to the repo root, or fix the docs/message to point at
+   `infra/`).
+
+   Two more real bugs found and fixed in `infra/flake.nix` getting
+   here:
+   - `android-nixpkgs.inputs.nixpkgs.follows = "nixpkgs"` broke the
+     `emulator` derivation: our pinned `nixos-24.11` snapshot had
+     already dropped the standalone `libgbm` top-level attribute,
+     which `android-nixpkgs`'s emulator build requires. Removed the
+     `follows` override (its own README shows this as optional,
+     commented out, for exactly this reason) so it uses its own
+     tested `nixpkgs` pin instead.
+   - `cmdline-tools-latest` (currently version 23) ships a new
+     self-downloading `android` CLI (replacing `sdkmanager`) that
+     fetches and unpacks itself into `$HOME` on first run — this
+     can't work inside Nix's network-less, read-only build sandbox
+     and failed with `.android-wrapped: cannot execute: required file
+     not found` while building `android-sdk-env`. Confirmed this
+     isn't a canary-vs-stable channel issue (broke identically on
+     both `android-nixpkgs` branches). Fixed by pinning the explicit
+     `cmdline-tools-19-0` attribute instead of `cmdline-tools-latest`.
+
+5. Once the dev box + toolchain exist, start **Phase 1**: get the
    OpenACAge Mopro/Rust ZK circuit building for Android via
    `cargo-ndk`, validated against the same fixed test vectors iOS's
    `age_assets.rs` uses. This is the first real go/no-go gate for the
    whole port (see `docs/2026-09-05-decisions-and-roadmap.md`).
-5. Spike the MOICA Android App-to-App intent contract via MOI's
+6. Spike the MOICA Android App-to-App intent contract via MOI's
    integrator zone (fido.moi.gov.tw/pt/agency) or contact info, in
    parallel with building the QR-first flow — not blocking, but don't
    let it go unstarted for long.
