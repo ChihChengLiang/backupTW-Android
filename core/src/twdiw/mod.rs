@@ -44,7 +44,9 @@ pub use credential_offer::{CredentialOffer, CredentialOfferError, CredentialOffe
 pub use issuer_authorization::{
     MalformedPage, Refusal, TwdiwIssuer, TwdiwOnChainRecord, TwdiwOnChainVerification, Verdict,
 };
-pub use moda_card_application::ModaCardApplication;
+pub use moda_card_application::{
+    parse_dw_modal_201i_response, DwModa201iResponse, DwModa201iResponseError, ModaCardApplication,
+};
 pub use oid4vp_request::{
     Oid4VpAuthorizeLink, Oid4VpCredentialFormat, Oid4VpInputDescriptor, Oid4VpRequest,
     Oid4VpRequestError, Oid4VpRequestedField, Oid4VpSubmissionRequirement,

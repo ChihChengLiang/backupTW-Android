@@ -37,7 +37,7 @@ use crate::twdiw::credential::TwdiwCredential;
 use crate::twdiw::oid4vp_request::{Oid4VpCredentialFormat, Oid4VpRequest};
 
 /// One credential entry, ready to ride in a `vp_token`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Oid4VpPresentedCredential {
     pub descriptor_id: String,
     pub format: Oid4VpCredentialFormat,

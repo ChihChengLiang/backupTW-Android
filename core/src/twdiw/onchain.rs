@@ -40,7 +40,7 @@ pub struct RegistryInput {
     pub org_group: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CurrentRegistryRecord {
     pub signed_did_document: String,
     pub organisation_json: String,
