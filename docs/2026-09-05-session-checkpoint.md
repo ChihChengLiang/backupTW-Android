@@ -150,11 +150,64 @@ open.
      both `android-nixpkgs` branches). Fixed by pinning the explicit
      `cmdline-tools-19-0` attribute instead of `cmdline-tools-latest`.
 
-5. Once the dev box + toolchain exist, start **Phase 1**: get the
-   OpenACAge Mopro/Rust ZK circuit building for Android via
-   `cargo-ndk`, validated against the same fixed test vectors iOS's
-   `age_assets.rs` uses. This is the first real go/no-go gate for the
-   whole port (see `docs/2026-09-05-decisions-and-roadmap.md`).
+5. ~~Once the dev box + toolchain exist, start **Phase 1**~~ **Native
+   half done (2026-09-05):** `flake.nix` gained Rust + Android NDK
+   (r27) + `cargo-ndk` + `circom` (from `nixpkgs-unstable` — nixos-24.11's
+   2.2.0 is too old for the circuits' `pragma circom 2.2.3`) + a full
+   C/C++ toolchain (`gcc`, `cmake`, `gnum4`, `autoconf`, `automake`,
+   `libtool`, `nasm` — needed to build vendored GMP + witnesscalc from
+   source) + `corepack` (zkID's `circom/` package pins `yarn@4.13.0`).
+   Also moved `flake.nix`/`flake.lock` from `infra/` to the repo root
+   (was already flagged wrong above).
+
+   Cloned `ethereum/zkID` fresh at the pinned/reviewed commit
+   (`b395e09c225ff45b003f0087c28e2e208e22f944`, confirmed still == HEAD)
+   to `~/zkID` (outside the repo, like `build-ios.sh` expects), applied
+   the `OpenACAge/` overlay (`zkid-mobile.patch`, `predicate.rs`,
+   `age_assets.rs`, `cargo-config.toml`, `witnesscalc-adapter.patch`).
+   Compiled `jwt_2k`/`show` via `circomkit` (`bash scripts/compile.sh`)
+   — **output `.r1cs` files are byte-identical, hash-identical to the
+   ones pinned in `RELEASE-openac-age-v1.md`**, confirming circuit
+   compilation is fully deterministic. Built and ran
+   `age_assets` natively (`cargo build --release --bin age_assets`,
+   x86_64-linux, no Android cross-compilation needed for this gate —
+   it's a build-machine-side release gate, not part of the mobile
+   binary): **passed** — `linked proof accepted; prepare=4264ms
+   show=121ms` (iOS's own numbers were 19,203ms/777ms on different
+   hardware; timing isn't the pass criterion, the accepted verdict is).
+
+   Real bugs/gaps found along the way:
+   - circomkit's JS-based Groth16 `setup` throws for any non-`bn128`
+     prime (`circomkit.json` here uses `secq256r1`) — a red herring at
+     first. The actual key-generation path for this project doesn't go
+     through circomkit's setup at all: `setup_jwt_keys`/`setup_show_keys`
+     (exposed by the `zkid-mobile.patch` overlay) call into
+     `ecdsa-spartan2`, which uses `spartan2::R1CSSNARK` — a **Spartan**
+     SNARK (transparent, no trusted setup, no ptau), not Groth16.
+   - **Flagged, unresolved, needs crypto review:**
+     `docs/2026-09-05-spartan2-zk-property-unverified.md` — the vendored
+     `spartan2` fork (`0xVikasRushi/Spartan2`, branch `openac-sdk`) has a
+     README stating "The proofs are *not* zero-knowledge (we plan to add
+     it in the near future)", unverified as stale-vs-live for the pinned
+     commit. If live, this would be a serious problem (the whole point of
+     the circuit is hiding the birth date) — needs someone to actually
+     read the Hyrax/Bulletproofs commitment code, not just the README.
+     Functional validation above was continued in parallel per
+     project-owner direction; passing it does **not** clear this concern.
+
+   Work so far is on a local branch, `android-phase0-tooling` (not
+   pushed) — project owner wants commits accumulated to a reasonable
+   size before opening a PR, not pushed straight to `main` piecemeal.
+
+   **Not yet done:** the actual Android cross-compile
+   (`cargo build --release --bin android` via `cargo-ndk`, which will
+   need the same GMP/witnesscalc C/C++ build but cross-compiled through
+   the NDK toolchain — untested, likely its own round of fixes) and
+   validating proving/verification through the generated
+   Kotlin/JNI bindings on-device or on an emulator. That instrumented
+   JVM harness is still Phase 1's actual stated exit criterion; the
+   native run above de-risks the crypto/circuit side of it but isn't
+   the same as Kotlin-side validation.
 6. Spike the MOICA Android App-to-App intent contract via MOI's
    integrator zone (fido.moi.gov.tw/pt/agency) or contact info, in
    parallel with building the QR-first flow — not blocking, but don't
