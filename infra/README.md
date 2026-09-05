@@ -4,9 +4,9 @@ Two layers, deliberately separate:
 
 - **`infra/`** (Terraform) — provisions the EC2 box itself: instance type,
   nested virtualization, security group, disk, and the bootstrap script.
-- **`flake.nix`** — the reproducible toolchain *inside* the box: Android SDK,
-  JDK, Node (for Claude Code), Gradle. Runs identically on this instance,
-  a replacement instance, or your laptop.
+- **`flake.nix`** (repo root) — the reproducible toolchain *inside* the box:
+  Android SDK/NDK, Rust + cargo-ndk, JDK, Node (for Claude Code), Gradle.
+  Runs identically on this instance, a replacement instance, or your laptop.
 
 ## First-time setup
 
@@ -24,8 +24,8 @@ then:
 ```bash
 ssh ubuntu@$(terraform output -raw public_ip)
 cat BOOTSTRAP_DONE   # confirms bootstrap finished
-cd project/infra       # flake.nix lives here, not the repo root
-nix develop           # pulls the whole Android toolchain
+cd project
+nix develop           # pulls the whole Android + Rust toolchain
 avdmanager create avd -n dev -k "system-images;android-34;google_apis;x86_64"
 emulator -avd dev -no-window -gpu swiftshader_indirect &
 ```
