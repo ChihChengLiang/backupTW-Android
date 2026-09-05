@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "zkharness"
 include(":app")
+include(":wallet")

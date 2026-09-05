@@ -2,6 +2,7 @@
 .gradle/
 .kotlin/
 app/build/
+wallet/build/
 local.properties
 
 # Generated native library + UniFFI bindings - regenerated per
@@ -10,3 +11,5 @@ local.properties
 # backupTW-iOS/Native/OpenACAge/README.md's r1cs/key handling).
 app/src/main/jniLibs/
 app/src/main/kotlin/uniffi/
+wallet/src/main/jniLibs/
+wallet/src/main/kotlin/uniffi/
