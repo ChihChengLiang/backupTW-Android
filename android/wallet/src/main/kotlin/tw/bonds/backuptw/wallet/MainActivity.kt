@@ -1,219 +1,138 @@
 package tw.bonds.backuptw.wallet
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import uniffi.backuptw_core.CredentialOffer
-import uniffi.backuptw_core.FfiTwdiwCredential
-import uniffi.backuptw_core.TwdiwIssuer
-import uniffi.backuptw_core.TwdiwOnChainVerification
-import uniffi.backuptw_core.Verdict
-import uniffi.backuptw_core.WalletIdentity
-import uniffi.backuptw_core.assembleProofJwt
-import uniffi.backuptw_core.authoriseFetchUrl
-import uniffi.backuptw_core.canonicalIssuerIdentifier
-import uniffi.backuptw_core.confirmOrganisation
-import uniffi.backuptw_core.confirmRegistryEvidence
-import uniffi.backuptw_core.generateEphemeralWalletIdentity
-import uniffi.backuptw_core.parseCredentialOffer
-import uniffi.backuptw_core.parseIssuerTrustListPage
-import uniffi.backuptw_core.proofSigningInput
-import uniffi.backuptw_core.readTwdiwCredential
-import uniffi.backuptw_core.walletIdentityFromPublicKey
+import uniffi.backuptw_core.parseCredentialOfferLink
 
 /**
- * Phase 4's first vertical-slice step, extended: identity generation
- * (the original demo) plus the three pieces of the TWDIW OID4VCI
- * *receive* path that now exist in `core/` - offer/trust-list evaluation,
- * proof-JWT building and signing, and reading a received credential.
- *
- * **Every section below is fixture-driven, not a live flow.** There is no
- * TWDIW sandbox endpoint wired up here - no network calls happen at all.
- * Each button demonstrates one real piece of the pipeline against bundled
- * test data (see `Fixtures.kt`); wiring them into one continuous flow
- * against a live issuer is later work. No storage, no navigation, no
- * design system - see `android/README.md`.
+ * Milestone 1 of the real 7-Eleven pickup build
+ * (`docs/2026-09-05-*` field notes; see the session's plan for the full
+ * four-milestone sequence): native infrastructure only - real HTTP
+ * (`TwdiwClient`), real Android Keystore signing (`KeystoreHolderKey`),
+ * real encrypted storage (`CredentialStore`/`TrustSnapshotStore`), and
+ * the `modadigitalwallet://` deep-link registration a carrier's app or a
+ * verifier's request needs to hand control back to this app. No live
+ * business flow is wired up yet - `ApplyForCard`/`PickupCatalog` are
+ * placeholders until Milestones 3/4. The original fixture-only demo
+ * (`FixtureDemoScreen`) stays reachable from Home, unchanged.
  */
 class MainActivity : ComponentActivity() {
+    private var pendingDeepLink by mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingDeepLink = intent?.data
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    WalletDemoScreen()
+                    WalletApp(
+                        deepLink = pendingDeepLink,
+                        onDeepLinkConsumed = { pendingDeepLink = null },
+                    )
                 }
             }
         }
     }
-}
 
-@Composable
-fun WalletDemoScreen() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text("有備而來 — dev build", style = MaterialTheme.typography.headlineSmall)
-
-        IdentitySection()
-        HorizontalDivider()
-        OfferGatesSection()
-        HorizontalDivider()
-        ProofJwtSection()
-        HorizontalDivider()
-        ReadCredentialSection()
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingDeepLink = intent.data
     }
 }
 
-@Composable
-private fun IdentitySection() {
-    var identity by remember { mutableStateOf<WalletIdentity?>(null) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("1. Generate an identity", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Generates a fresh did:key identity via core/'s Rust logic. Ephemeral only.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Button(onClick = { identity = generateEphemeralWalletIdentity() }) {
-            Text("Generate identity")
-        }
-        identity?.let { id ->
-            Text("p256-pub:", style = MaterialTheme.typography.labelLarge)
-            Text(id.did, style = MaterialTheme.typography.bodySmall)
-            Text("jwk_jcs-pub:", style = MaterialTheme.typography.labelLarge)
-            Text(id.jwkDid, style = MaterialTheme.typography.bodySmall)
-        }
-    }
+sealed interface Screen {
+    data object Home : Screen
+    data object FixtureDemo : Screen
+    data object ApplyForCard : Screen
+    data object PickupCatalog : Screen
 }
 
 @Composable
-private fun OfferGatesSection() {
-    var result by remember { mutableStateOf<String?>(null) }
-    var matchedIssuer by remember { mutableStateOf<TwdiwIssuer?>(null) }
-    var issuerIdentifier by remember { mutableStateOf<String?>(null) }
+fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
+    var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var deepLinkNotice by remember { mutableStateOf<String?>(null) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("2. Evaluate a fixture offer", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Parses a bundled fixture credential offer and trust-list page, " +
-                "not a live issuer, and runs the three issuer-authorization gates.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Button(onClick = {
-            result = runCatching {
-                val offer: CredentialOffer = parseCredentialOffer(Fixtures.OFFER_JSON.toByteArray())
-                val list = parseIssuerTrustListPage(Fixtures.TRUST_LIST_PAGE_JSON.toByteArray())
+    LaunchedEffect(deepLink) {
+        if (deepLink != null) {
+            deepLinkNotice = describeDeepLink(deepLink)
+            onDeepLinkConsumed()
+        }
+    }
 
-                val matched = when (val verdict = authoriseFetchUrl(offer.credentialIssuer, list)) {
-                    is Verdict.Allowed -> verdict.issuers
-                    is Verdict.Refused -> throw verdict.v1
-                }
-
-                val verification = mapOf(matched[0].did to TwdiwOnChainVerification.DevelopmentSandbox)
-                confirmRegistryEvidence(matched, verification)
-
-                val confirmed = confirmOrganisation(offer.credentialIssuer, matched)
-                matchedIssuer = confirmed
-                issuerIdentifier = canonicalIssuerIdentifier(offer.credentialIssuer)
-
-                "Gate 1 (host trusted): pass\n" +
-                    "Gate 1b (registry evidence): pass (development sandbox)\n" +
-                    "Gate 2 (organisation match): pass — ${confirmed.displayName}"
-            }.fold(
-                onSuccess = { it },
-                onFailure = { "Refused: ${it.message}" },
+    Column(modifier = Modifier.fillMaxSize()) {
+        deepLinkNotice?.let {
+            Text(
+                it,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
             )
-        }) {
-            Text("Evaluate fixture offer")
         }
-        result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        when (screen) {
+            Screen.Home -> HomeScreen(onNavigate = { screen = it })
+            Screen.FixtureDemo -> FixtureDemoScreen(onBack = { screen = Screen.Home })
+            Screen.ApplyForCard ->
+                PlaceholderScreen(
+                    title = "Apply for a telecom card",
+                    body = "Browsing the live catalog, phone verification, and OID4VCI " +
+                        "collection land in Milestone 3.",
+                    onBack = { screen = Screen.Home },
+                )
+            Screen.PickupCatalog ->
+                PlaceholderScreen(
+                    title = "7-Eleven package pickup",
+                    body = "The live pickup flow (catalog, on-chain check, OID4VP " +
+                        "presentation, barcode) lands in Milestone 4.",
+                    onBack = { screen = Screen.Home },
+                )
+        }
     }
 }
 
-@Composable
-private fun ProofJwtSection() {
-    var holderKey by remember { mutableStateOf<HolderKey?>(null) }
-    var result by remember { mutableStateOf<String?>(null) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("3. Build a signed proof JWT", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Generates an in-memory P-256 key (real signing, not a live " +
-                "Keystore) and signs an OID4VCI proof JWT for the fixture issuer.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Button(onClick = {
-            result = runCatching {
-                val key = holderKey ?: HolderKey.generate().also { holderKey = it }
-                val x963 = key.publicKeyX963()
-                val issuerIdentifier = canonicalIssuerIdentifier(
-                    parseCredentialOffer(Fixtures.OFFER_JSON.toByteArray()).credentialIssuer,
-                ) ?: throw IllegalStateException("no issuer identifier")
-
-                // The proof's `kid`/`iss` must be this key's own did:key, in
-                // the jwk_jcs-pub spelling TWDIW expects - derived from this
-                // key's own public point, not a fresh unrelated identity.
-                val clientId = walletIdentityFromPublicKey(x963).jwkDid
-                val input = proofSigningInput(clientId, issuerIdentifier, clientId, Fixtures.DEMO_NONCE, System.currentTimeMillis() / 1000)
-                val signature = key.signRaw(input.toByteArray())
-                val jwt = assembleProofJwt(input, signature)
-                "client_id (this key's did:key):\n$clientId\n\nProof JWT (${jwt.split(".").size} segments, ${jwt.length} chars):\n$jwt"
-            }.fold(
-                onSuccess = { it },
-                onFailure = { "Failed: ${it.message}" },
-            )
-        }) {
-            Text("Build signed proof JWT")
-        }
-        result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+/**
+ * A `modadigitalwallet://` link this app was just handed - by a carrier's
+ * app (`credential_offer`) or a verifier's pickup request (`authorize`).
+ * Only the offer form is actually parsed here; the authorize form's
+ * handling is Milestone 4's job (it needs [Oid4VpAuthorizeLink], not yet
+ * FFI-exported - Milestone 2).
+ */
+private fun describeDeepLink(uri: Uri): String =
+    when (uri.host) {
+        "credential_offer" ->
+            runCatching { parseCredentialOfferLink(uri.toString()) }
+                .fold(
+                    onSuccess = { "Received a credential-offer link:\n$it" },
+                    onFailure = { "Received a credential-offer link, but it did not parse: ${it.message}" },
+                )
+        "authorize" -> "Received a pickup/authorize link (handling arrives in Milestone 4):\n$uri"
+        else -> "Received an unrecognised link: $uri"
     }
-}
 
 @Composable
-private fun ReadCredentialSection() {
-    var result by remember { mutableStateOf<String?>(null) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("4. Read a fixture credential", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Reads and cryptographically verifies a bundled fixture TWDIW " +
-                "SD-JWT credential (real signature check, not a live issuer).",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Button(onClick = {
-            result = runCatching {
-                val credential: FfiTwdiwCredential =
-                    readTwdiwCredential(Fixtures.CREDENTIAL, System.currentTimeMillis() / 1000)
-                val claims = credential.disclosedClaims.joinToString("\n") { "  ${it.name}: ${it.value}" }
-                "type: ${credential.credentialType}\n" +
-                    "issuer: ${credential.issuerDid}\n" +
-                    "subject: ${credential.subjectDid}\n" +
-                    "disclosed claims:\n$claims"
-            }.fold(
-                onSuccess = { it },
-                onFailure = { "Failed: ${it.message}" },
-            )
-        }) {
-            Text("Read fixture credential")
+private fun PlaceholderScreen(title: String, body: String, onBack: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Text(body, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+        Button(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) {
+            Text("Back")
         }
-        result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
 }
