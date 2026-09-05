@@ -31,7 +31,7 @@ use url::Url;
 /// isn't one (measured 2026-08-16: all 43 production entries are labelled
 /// 「政府部門」, a set that includes FamilyMart and 7-Eleven) — a value you
 /// cannot hold is a value nobody can accidentally draw.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, uniffi::Record)]
 pub struct TwdiwIssuer {
     pub did: String,
     pub display_name: String,
@@ -59,7 +59,7 @@ pub struct TwdiwIssuer {
     pub reports_on_chain_anchor: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, uniffi::Record)]
 pub struct TwdiwOnChainRecord {
     pub network: String,
     pub contract_address: String,
@@ -69,7 +69,7 @@ pub struct TwdiwOnChainRecord {
 }
 
 /// The independent result shown beside an API trust-list entry.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum TwdiwOnChainVerification {
     Verified {
         block_number: String,
@@ -91,7 +91,7 @@ impl TwdiwOnChainVerification {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum Refusal {
     /// Not `https`.
     #[error("not https")]
@@ -134,7 +134,7 @@ pub enum Refusal {
     OrganisationMismatch,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum Verdict {
     /// Contact it. `canonical_host` is **the trust list's spelling**, not
     /// the candidate's.
