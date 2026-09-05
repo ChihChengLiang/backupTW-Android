@@ -4,8 +4,9 @@
 //! Ported from `backupTW-iOS/backupTW/TWDIW/{CredentialOffer,
 //! IssuerAuthorization}.swift`. Scoped to the *receive* path (Phase 4's
 //! vertical slice needs "receive one credential") - `OID4VPResponse`/
-//! `OID4VPRequest`/`OID4VPPresentation` (presentation/showing) and
-//! `ConvenienceStorePickup` are a separate area, not yet ported.
+//! `OID4VPPresentation` (presentation/showing) and `ConvenienceStorePickup`
+//! are a separate area, not yet ported. `OID4VPRequest` (what a verifier
+//! asked for) is ported, in `oid4vp_request`.
 //!
 //! The actual network calls, Keystore-backed proof signing, and credential
 //! storage stay native by design
@@ -18,6 +19,7 @@ pub mod credential;
 pub mod credential_offer;
 pub mod issuer_authorization;
 pub mod moda_card_application;
+pub mod oid4vp_request;
 pub mod onchain;
 pub mod telecom_card_catalog;
 
@@ -33,6 +35,10 @@ pub use issuer_authorization::{
     MalformedPage, Refusal, TwdiwIssuer, TwdiwOnChainRecord, TwdiwOnChainVerification, Verdict,
 };
 pub use moda_card_application::ModaCardApplication;
+pub use oid4vp_request::{
+    Oid4VpAuthorizeLink, Oid4VpCredentialFormat, Oid4VpInputDescriptor, Oid4VpRequest,
+    Oid4VpRequestError, Oid4VpRequestedField, Oid4VpSubmissionRequirement,
+};
 pub use onchain::{
     check as check_on_chain_record, current_record_call_data, decode_current_record,
     decode_registry_input, is_infrastructure_error, CurrentRegistryRecord, RegistryInput,
