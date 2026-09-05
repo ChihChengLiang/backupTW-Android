@@ -1,0 +1,12 @@
+# Gradle/Kotlin build output
+.gradle/
+.kotlin/
+app/build/
+local.properties
+
+# Generated native library + UniFFI bindings - regenerated per
+# android/README.md, not vendored (matches the project's existing
+# practice of not committing large generated ZK artifacts; see
+# backupTW-iOS/Native/OpenACAge/README.md's r1cs/key handling).
+app/src/main/jniLibs/
+app/src/main/kotlin/uniffi/
