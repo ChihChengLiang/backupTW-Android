@@ -290,3 +290,8 @@ open.
    integrator zone (fido.moi.gov.tw/pt/agency) or contact info, in
    parallel with building the QR-first flow — not blocking, but don't
    let it go unstarted for long.
+7. Phase 2 (the shared Rust core) started, same session: `core/`
+   now exists with `did:key` (both spellings) and the credential
+   model/SD-JWT/age-predicate modules, 87 tests passing. Tracked
+   separately from here on — see
+   `docs/2026-09-05-phase2-core-progress.md`.
