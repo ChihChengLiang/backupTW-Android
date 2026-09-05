@@ -56,9 +56,32 @@ open.
    `call_boto3`'s `operation_name` must be botocore CamelCase (e.g.
    `GetCallerIdentity`), not the boto3 client's snake_case method name
    (`get_caller_identity`) — the latter throws `OperationNotFoundError`.
-2. **GitHub write access for the agent is still not set up** — the
-   user flagged this as needed early on; still pending as of this
-   checkpoint.
+2. ~~GitHub write access for the agent is still not set up.~~ **Done
+   (2026-09-05):** this is specifically for a Claude Code session
+   running *on the EC2 box* to push its own commits (not this local
+   session). Set up as a repo-scoped deploy key, not a PAT:
+   - Generated a dedicated ed25519 keypair on the box
+     (`~/.ssh/id_ed25519_github`, comment
+     `backupTW-Android-ec2-devbox`).
+   - Registered its public half as a **write-enabled deploy key** on
+     `ChihChengLiang/backupTW-Android` via
+     `gh repo deploy-key add ... --allow-write` (run locally, using
+     the user's own `gh` auth — the box has no GitHub auth of its
+     own). Visible under repo Settings → Deploy keys, id
+     `162363320`.
+   - Pointed the box at it via `~/.ssh/config` (`Host github.com`
+     forcing that `IdentityFile`), switched `~/project`'s `origin`
+     remote from HTTPS to SSH, and set `git config user.name`/
+     `user.email` on the box to match the user's own
+     (`ChihChengLiang` / `chihchengliang@gmail.com`) so box-authored
+     commits read the same as any other commit in history.
+   - Verified with a real push: created `test/deploy-key-verify`,
+     committed, pushed, confirmed it landed on GitHub, then deleted
+     it both remotely and locally (confirmed gone via a 404 on the
+     branches API) — no lingering test artifacts.
+   - Note: deploy keys are scoped to exactly this one repo (can't
+     read/write anything else), which is why this was preferred over
+     a personal access token for a single-project dev box.
 3. ~~The EC2 dev box hasn't been provisioned yet.~~ **Done
    (2026-09-05):** applied via `terraform apply` (instance id
    `i-061fb5a94405be5b8`, public IP `100.54.247.25`, `ssh
