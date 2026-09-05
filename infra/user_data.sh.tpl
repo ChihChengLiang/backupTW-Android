@@ -27,8 +27,8 @@ sudo -u ubuntu -H bash -c 'git clone --recurse-submodules ${git_repo_url} /home/
 cat > /home/ubuntu/BOOTSTRAP_DONE <<'EOF'
 Bootstrap finished.
   ssh in, then:
-    cd project/infra   # flake.nix lives here, not the repo root
-    nix develop        # pulls the Android SDK/JDK/tooling from flake.nix
+    cd project
+    nix develop        # pulls the Android SDK/NDK/Rust/JDK/tooling from flake.nix
     avdmanager create avd -n dev -k "system-images;android-34;google_apis;x86_64"
 EOF
 chown ubuntu:ubuntu /home/ubuntu/BOOTSTRAP_DONE
