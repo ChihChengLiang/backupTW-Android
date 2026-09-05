@@ -4,6 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
     flake-utils.url = "github:numtide/flake-utils";
+    # nixos-24.11 only has circom 2.2.0; the OpenACAge zkID circuits pin
+    # `pragma circom 2.2.3`, so pull just circom from unstable instead of
+    # bumping our whole nixpkgs pin.
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     # Deliberately does NOT follow our "nixpkgs" input: android-nixpkgs's
     # SDK/emulator derivations are only tested against its own pinned
     # nixpkgs revision, and forcing ours onto it can break them (e.g. the
@@ -17,10 +21,11 @@
     android-nixpkgs.url = "github:tadfisher/android-nixpkgs/stable";
   };
 
-  outputs = { self, nixpkgs, flake-utils, android-nixpkgs }:
+  outputs = { self, nixpkgs, flake-utils, android-nixpkgs, nixpkgs-unstable }:
     flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
       let
         pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
+        pkgsUnstable = import nixpkgs-unstable { inherit system; };
 
         androidSdk = android-nixpkgs.sdk.${system} (sdkPkgs: with sdkPkgs; [
           # Not cmdline-tools-latest (currently v23): that release replaced
@@ -56,8 +61,23 @@
             pkgs.cargo-ndk
             pkgs.pkg-config
             # For compiling the OpenACAge zkID circuits (jwt_2k/show) via
-            # circomkit before the Android Mopro build can run.
-            pkgs.circom
+            # circomkit before the Android Mopro build can run. From
+            # nixpkgs-unstable: the circuits pin `pragma circom 2.2.3`,
+            # newer than nixos-24.11's 2.2.0.
+            pkgsUnstable.circom
+            # C/C++ toolchain for ecdsa-spartan2's build.rs, which vendors
+            # and builds GMP + witnesscalc (the jwt_2k/show witness
+            # calculators) from source via autotools + cmake.
+            pkgs.gcc
+            pkgs.gnumake
+            pkgs.cmake
+            pkgs.gnum4
+            pkgs.autoconf
+            pkgs.automake
+            pkgs.libtool
+            pkgs.perl
+            pkgs.which
+            pkgs.nasm
           ];
 
           shellHook = ''
