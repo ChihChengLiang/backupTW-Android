@@ -15,7 +15,7 @@ cd infra
 terraform init
 terraform apply \
   -var="allowed_ssh_cidr=YOUR_IP/32" \
-  -var="git_repo_url=git@github.com:you/your-repo.git"
+  -var="git_repo_url=https://github.com/you/your-repo.git"
 ```
 
 Wait ~2 min for `user_data.sh.tpl` to finish (installs Nix, clones the repo),
@@ -24,7 +24,7 @@ then:
 ```bash
 ssh ubuntu@$(terraform output -raw public_ip)
 cat BOOTSTRAP_DONE   # confirms bootstrap finished
-cd project
+cd project/infra       # flake.nix lives here, not the repo root
 nix develop           # pulls the whole Android toolchain
 avdmanager create avd -n dev -k "system-images;android-34;google_apis;x86_64"
 emulator -avd dev -no-window -gpu swiftshader_indirect &
