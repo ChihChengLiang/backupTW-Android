@@ -17,6 +17,7 @@ pub mod collection;
 pub mod credential;
 pub mod credential_offer;
 pub mod issuer_authorization;
+pub mod onchain;
 
 pub use collection::{
     assemble_proof_jwt, canonical_issuer_identifier, credential_bound_to, form_encode,
@@ -28,4 +29,8 @@ pub use credential::{
 pub use credential_offer::{CredentialOffer, CredentialOfferError, CredentialOfferLink};
 pub use issuer_authorization::{
     MalformedPage, Refusal, TwdiwIssuer, TwdiwOnChainRecord, TwdiwOnChainVerification, Verdict,
+};
+pub use onchain::{
+    check as check_on_chain_record, current_record_call_data, decode_current_record,
+    decode_registry_input, is_infrastructure_error, CurrentRegistryRecord, RegistryInput,
 };
