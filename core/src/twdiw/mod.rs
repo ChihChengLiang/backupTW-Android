@@ -17,6 +17,7 @@ pub mod collection;
 pub mod credential;
 pub mod credential_offer;
 pub mod issuer_authorization;
+pub mod moda_card_application;
 pub mod onchain;
 
 pub use collection::{
@@ -30,6 +31,7 @@ pub use credential_offer::{CredentialOffer, CredentialOfferError, CredentialOffe
 pub use issuer_authorization::{
     MalformedPage, Refusal, TwdiwIssuer, TwdiwOnChainRecord, TwdiwOnChainVerification, Verdict,
 };
+pub use moda_card_application::ModaCardApplication;
 pub use onchain::{
     check as check_on_chain_record, current_record_call_data, decode_current_record,
     decode_registry_input, is_infrastructure_error, CurrentRegistryRecord, RegistryInput,
