@@ -4,10 +4,17 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
     flake-utils.url = "github:numtide/flake-utils";
-    android-nixpkgs = {
-      url = "github:tadfisher/android-nixpkgs";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # Deliberately does NOT follow our "nixpkgs" input: android-nixpkgs's
+    # SDK/emulator derivations are only tested against its own pinned
+    # nixpkgs revision, and forcing ours onto it can break them (e.g. the
+    # emulator derivation's "libgbm" argument isn't satisfiable on every
+    # nixpkgs revision).
+    #
+    # Pinned to the "stable" branch, not "main" — main tracks Google's
+    # daily-updated "canary" SDK channel, whose newest cmdline-tools build
+    # shipped a broken CLI wrapper (".android-wrapped: cannot execute:
+    # required file not found") when we tried it.
+    android-nixpkgs.url = "github:tadfisher/android-nixpkgs/stable";
   };
 
   outputs = { self, nixpkgs, flake-utils, android-nixpkgs }:
@@ -16,7 +23,12 @@
         pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
 
         androidSdk = android-nixpkgs.sdk.${system} (sdkPkgs: with sdkPkgs; [
-          cmdline-tools-latest
+          # Not cmdline-tools-latest (currently v23): that release replaced
+          # sdkmanager with a new "android" CLI that self-downloads/unpacks
+          # into $HOME on first run, which fails inside Nix's network-less,
+          # read-only build sandbox ("required file not found" building
+          # android-sdk-env). Pinned to the last version before that change.
+          cmdline-tools-19-0
           platform-tools
           build-tools-34-0-0
           platforms-android-34
