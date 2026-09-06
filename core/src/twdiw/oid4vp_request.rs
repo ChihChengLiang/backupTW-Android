@@ -44,7 +44,7 @@ pub enum Oid4VpRequestError {
 /// The `openid4vp` / `modadigitalwallet://authorize` link a verifier
 /// shows, carrying either the request object inline or a `request_uri` to
 /// fetch it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum Oid4VpAuthorizeLink {
     ByReference {
         client_id: String,
@@ -116,7 +116,7 @@ impl Oid4VpAuthorizeLink {
 
 /// One field the verifier asked to see, from an input descriptor's
 /// constraints.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Oid4VpRequestedField {
     /// The JSONPath the descriptor named, e.g. `$.credentialSubject.name`.
     pub path: String,
@@ -142,7 +142,7 @@ impl Oid4VpRequestedField {
 /// signed by a MOICA citizen certificate - kept distinct from `SdJwt` so a
 /// verifier does not apply JOSE rules to a document that deliberately is
 /// not a compact JWT.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum Oid4VpCredentialFormat {
     SdJwt,
     Moica,
@@ -154,7 +154,7 @@ impl Oid4VpCredentialFormat {
 }
 
 /// One alternative named by a DIF presentation definition.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Oid4VpInputDescriptor {
     pub id: String,
     pub credential_format: Option<Oid4VpCredentialFormat>,
@@ -166,7 +166,7 @@ pub struct Oid4VpInputDescriptor {
 }
 
 /// How a verifier combines descriptor groups.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Oid4VpSubmissionRequirement {
     pub name: Option<String>,
     pub rule: String,
@@ -178,7 +178,7 @@ pub struct Oid4VpSubmissionRequirement {
 
 /// A verified presentation request, reduced to what building a response
 /// needs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Oid4VpRequest {
     /// Where the signed `vp_token` is posted back. **Verified**: the
     /// request object it came in was signed by `client_id`'s key.

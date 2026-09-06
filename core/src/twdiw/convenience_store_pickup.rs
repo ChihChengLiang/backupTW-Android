@@ -20,7 +20,7 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ConvenienceStorePickupScenario {
     pub vp_uid: String,
     pub name: String,
@@ -28,7 +28,7 @@ pub struct ConvenienceStorePickupScenario {
     pub logo_url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum ConvenienceStorePickupError {
     /// A 2xx reply whose body was not the shape expected.
     #[error("malformed response")]

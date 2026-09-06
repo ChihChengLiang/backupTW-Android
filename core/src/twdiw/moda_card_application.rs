@@ -31,6 +31,63 @@
 
 use crate::twdiw::issuer_authorization::normalised_host;
 
+/// The 201i (`DW-MODA-201i`) response: what the frontend says about the
+/// card being applied for, once [`ModaCardApplication`]'s `vc_uid`/`mode`
+/// have been resolved (`GET
+/// {frontendBase}/api/moda/dwapp/serviceUrl/{vcUid}?mode={mode}`, a
+/// network call that stays native).
+///
+/// Every field is optional because the official client treats them as
+/// optional (`CustomTabBarViewModel.getStaticVerifiableCredential` guards
+/// all three and bails if any is missing). `card_type` is the Swift
+/// struct's `type` (a Rust keyword) — `1` means the issuer flow opens in
+/// the system browser; anything else means an embedded webview.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DwModa201iResponse {
+    pub card_type: Option<i64>,
+    pub name: Option<String>,
+    /// The issuer's own page the holder finishes the application on —
+    /// **not** trusted to issue anything. Whatever deep link it eventually
+    /// hands back still goes through `CredentialOfferLink::parse` and both
+    /// issuer gates before a credential is minted.
+    pub issuer_service_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error)]
+pub enum DwModa201iResponseError {
+    /// A 2xx reply whose body was not the JSON shape expected.
+    #[error("malformed response")]
+    MalformedResponse,
+}
+
+#[derive(serde::Deserialize)]
+struct RawDwModa201iResponse {
+    #[serde(default, rename = "type")]
+    card_type: Option<i64>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default, rename = "issuerServiceUrl")]
+    issuer_service_url: Option<String>,
+}
+
+/// Parses the 201i response body. This document comes from the moda
+/// frontend the app already trusts for the trust list itself, not from an
+/// attacker-writable offer — so, matching the iOS source, a malformed
+/// field is carried through as `None` rather than dropping the whole
+/// response; only a body that isn't the expected JSON shape at all is an
+/// error.
+pub fn parse_dw_modal_201i_response(
+    json: &[u8],
+) -> Result<DwModa201iResponse, DwModa201iResponseError> {
+    let raw: RawDwModa201iResponse =
+        serde_json::from_slice(json).map_err(|_| DwModa201iResponseError::MalformedResponse)?;
+    Ok(DwModa201iResponse {
+        card_type: raw.card_type,
+        name: raw.name,
+        issuer_service_url: raw.issuer_service_url,
+    })
+}
+
 /// The vcUid and mode carried by a static card-application QR.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModaCardApplication {
@@ -92,6 +149,41 @@ impl ModaCardApplication {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_a_201i_response_with_every_field() {
+        let body = r#"{"type":1,"name":"台灣大哥大門號電子卡","issuerServiceUrl":"https://twm5g.com/8fk2j"}"#;
+        let parsed = parse_dw_modal_201i_response(body.as_bytes()).unwrap();
+        assert_eq!(
+            parsed,
+            DwModa201iResponse {
+                card_type: Some(1),
+                name: Some("台灣大哥大門號電子卡".to_string()),
+                issuer_service_url: Some("https://twm5g.com/8fk2j".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn a_missing_field_becomes_none_not_an_error() {
+        let parsed = parse_dw_modal_201i_response(b"{}").unwrap();
+        assert_eq!(
+            parsed,
+            DwModa201iResponse {
+                card_type: None,
+                name: None,
+                issuer_service_url: None,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_a_non_json_body() {
+        assert_eq!(
+            parse_dw_modal_201i_response(b"not json"),
+            Err(DwModa201iResponseError::MalformedResponse)
+        );
+    }
 
     #[test]
     fn recognises_the_static_card_application_qr() {

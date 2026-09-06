@@ -16,7 +16,7 @@ use serde::Deserialize;
 
 /// One entry of the official 「申請新卡」 catalogue, kept to what the apply
 /// flow needs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct TelecomCard {
     pub vc_uid: String,
     pub name: String,
@@ -29,7 +29,7 @@ pub struct TelecomCard {
     pub card_type: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum TelecomCardCatalogError {
     /// A 2xx reply whose body was not the `{data:{vcItems:[…]}}` shape
     /// expected.
