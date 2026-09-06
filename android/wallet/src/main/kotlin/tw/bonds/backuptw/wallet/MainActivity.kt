@@ -31,8 +31,10 @@ import androidx.compose.ui.unit.dp
  * `credential_offer` form of that link into [ApplyForCardScreen]'s live
  * receive flow; M4 wires up [PickupScreen]'s live 7-Eleven pickup, whose
  * own `authorize` deep link is generated and consumed in-process rather
- * than through this OS-level handler. The original fixture-only demo
- * (`FixtureDemoScreen`) stays reachable from Home, unchanged.
+ * than through this OS-level handler. Demo polish: the M1 smoke tests and
+ * the fixture-only regression demo (`FixtureDemoScreen`, PR #22) moved off
+ * Home's primary buttons into [DeveloperToolsScreen], so the two real
+ * flows are what a demo actually shows first.
  */
 class MainActivity : ComponentActivity() {
     private var pendingDeepLink by mutableStateOf<Uri?>(null)
@@ -64,6 +66,7 @@ sealed interface Screen {
     data object FixtureDemo : Screen
     data object ApplyForCard : Screen
     data object PickupCatalog : Screen
+    data object DeveloperTools : Screen
 }
 
 @Composable
@@ -112,6 +115,11 @@ fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
                     onBack = { screen = Screen.Home },
                 )
             Screen.PickupCatalog -> PickupScreen(onBack = { screen = Screen.Home })
+            Screen.DeveloperTools ->
+                DeveloperToolsScreen(
+                    onNavigate = { screen = it },
+                    onBack = { screen = Screen.Home },
+                )
         }
     }
 }
