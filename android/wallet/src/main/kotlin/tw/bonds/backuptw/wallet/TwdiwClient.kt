@@ -12,7 +12,8 @@ import java.util.concurrent.TimeUnit
  * read rather than guessed - the same lever every `*Error.badStatus`
  * case in the Swift source keeps.
  */
-class TwdiwHttpException(val statusCode: Int, val bodyText: String?) : IOException("HTTP $statusCode")
+class TwdiwHttpException(val statusCode: Int, val bodyText: String?) :
+    IOException(if (bodyText.isNullOrBlank()) "HTTP $statusCode" else "HTTP $statusCode: $bodyText")
 
 /**
  * The one HTTP client this app makes real network calls through - see
