@@ -8,7 +8,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,9 +29,10 @@ import androidx.compose.ui.unit.dp
  * `modadigitalwallet://` deep-link registration a carrier's app or a
  * verifier's request needs to hand control back to this app. M3 wires the
  * `credential_offer` form of that link into [ApplyForCardScreen]'s live
- * receive flow; `PickupCatalog` stays a placeholder until M4. The
- * original fixture-only demo (`FixtureDemoScreen`) stays reachable from
- * Home, unchanged.
+ * receive flow; M4 wires up [PickupScreen]'s live 7-Eleven pickup, whose
+ * own `authorize` deep link is generated and consumed in-process rather
+ * than through this OS-level handler. The original fixture-only demo
+ * (`FixtureDemoScreen`) stays reachable from Home, unchanged.
  */
 class MainActivity : ComponentActivity() {
     private var pendingDeepLink by mutableStateOf<Uri?>(null)
@@ -82,8 +82,12 @@ fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
                     pendingOfferLink = deepLink.toString()
                     screen = Screen.ApplyForCard
                 }
-                "authorize" ->
-                    deepLinkNotice = "Received a pickup/authorize link (handling arrives in Milestone 4):\n$deepLink"
+                // A verifier's own QR/NFC `authorize` link, scanned in
+                // person - distinct from PickupScreen's flow, which starts
+                // from the catalog and gets its own deep link in-process
+                // from the transaction-start reply. Not implemented: this
+                // build's pickup entry point is the Home screen button.
+                "authorize" -> deepLinkNotice = "Received a pickup/authorize link (not yet handled):\n$deepLink"
                 else -> deepLinkNotice = "Received an unrecognised link: $deepLink"
             }
             onDeepLinkConsumed()
@@ -107,24 +111,7 @@ fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
                     onOfferConsumed = { pendingOfferLink = null },
                     onBack = { screen = Screen.Home },
                 )
-            Screen.PickupCatalog ->
-                PlaceholderScreen(
-                    title = "7-Eleven package pickup",
-                    body = "The live pickup flow (catalog, on-chain check, OID4VP " +
-                        "presentation, barcode) lands in Milestone 4.",
-                    onBack = { screen = Screen.Home },
-                )
-        }
-    }
-}
-
-@Composable
-private fun PlaceholderScreen(title: String, body: String, onBack: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineSmall)
-        Text(body, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
-        Button(onClick = onBack, modifier = Modifier.padding(top = 16.dp)) {
-            Text("Back")
+            Screen.PickupCatalog -> PickupScreen(onBack = { screen = Screen.Home })
         }
     }
 }
