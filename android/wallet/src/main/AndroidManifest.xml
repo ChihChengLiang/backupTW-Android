@@ -1,16 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="有備而來 (dev)"
         android:allowBackup="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:theme="@android:style/Theme.Material.Light.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              The carrier's app hands a telecom-card offer back over this
+              scheme (host "credential_offer"), and a verifier's pickup
+              request uses it too (host "authorize") - see
+              CredentialOfferLink/Oid4VpAuthorizeLink in core. singleTask
+              above + this filter is what lets Android route the carrier's
+              redirect back into this already-running app rather than
+              opening a second instance.
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="modadigitalwallet" android:host="credential_offer" />
+                <data android:scheme="modadigitalwallet" android:host="authorize" />
             </intent-filter>
         </activity>
     </application>
