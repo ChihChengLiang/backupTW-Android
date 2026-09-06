@@ -20,19 +20,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import uniffi.backuptw_core.parseCredentialOfferLink
 
 /**
- * Milestone 1 of the real 7-Eleven pickup build
- * (`docs/2026-09-05-*` field notes; see the session's plan for the full
- * four-milestone sequence): native infrastructure only - real HTTP
- * (`TwdiwClient`), real Android Keystore signing (`KeystoreHolderKey`),
- * real encrypted storage (`CredentialStore`/`TrustSnapshotStore`), and
- * the `modadigitalwallet://` deep-link registration a carrier's app or a
- * verifier's request needs to hand control back to this app. No live
- * business flow is wired up yet - `ApplyForCard`/`PickupCatalog` are
- * placeholders until Milestones 3/4. The original fixture-only demo
- * (`FixtureDemoScreen`) stays reachable from Home, unchanged.
+ * The real 7-Eleven pickup build (`docs/2026-09-05-*` field notes; see
+ * the session's plan for the full four-milestone sequence). M1 supplied
+ * native infrastructure - real HTTP (`TwdiwClient`), real Android
+ * Keystore signing (`KeystoreHolderKey`), real encrypted storage
+ * (`CredentialStore`/`TrustSnapshotStore`) - and the
+ * `modadigitalwallet://` deep-link registration a carrier's app or a
+ * verifier's request needs to hand control back to this app. M3 wires the
+ * `credential_offer` form of that link into [ApplyForCardScreen]'s live
+ * receive flow; `PickupCatalog` stays a placeholder until M4. The
+ * original fixture-only demo (`FixtureDemoScreen`) stays reachable from
+ * Home, unchanged.
  */
 class MainActivity : ComponentActivity() {
     private var pendingDeepLink by mutableStateOf<Uri?>(null)
@@ -69,11 +69,23 @@ sealed interface Screen {
 @Composable
 fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var pendingOfferLink by remember { mutableStateOf<String?>(null) }
     var deepLinkNotice by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(deepLink) {
         if (deepLink != null) {
-            deepLinkNotice = describeDeepLink(deepLink)
+            when (deepLink.host) {
+                // The carrier's app hands this back once phone verification
+                // is done - route straight into the screen that started it,
+                // which reads back which application it answers.
+                "credential_offer" -> {
+                    pendingOfferLink = deepLink.toString()
+                    screen = Screen.ApplyForCard
+                }
+                "authorize" ->
+                    deepLinkNotice = "Received a pickup/authorize link (handling arrives in Milestone 4):\n$deepLink"
+                else -> deepLinkNotice = "Received an unrecognised link: $deepLink"
+            }
             onDeepLinkConsumed()
         }
     }
@@ -90,10 +102,9 @@ fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
             Screen.Home -> HomeScreen(onNavigate = { screen = it })
             Screen.FixtureDemo -> FixtureDemoScreen(onBack = { screen = Screen.Home })
             Screen.ApplyForCard ->
-                PlaceholderScreen(
-                    title = "Apply for a telecom card",
-                    body = "Browsing the live catalog, phone verification, and OID4VCI " +
-                        "collection land in Milestone 3.",
+                ApplyForCardScreen(
+                    pendingOfferLink = pendingOfferLink,
+                    onOfferConsumed = { pendingOfferLink = null },
                     onBack = { screen = Screen.Home },
                 )
             Screen.PickupCatalog ->
@@ -106,25 +117,6 @@ fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
         }
     }
 }
-
-/**
- * A `modadigitalwallet://` link this app was just handed - by a carrier's
- * app (`credential_offer`) or a verifier's pickup request (`authorize`).
- * Only the offer form is actually parsed here; the authorize form's
- * handling is Milestone 4's job (it needs [Oid4VpAuthorizeLink], not yet
- * FFI-exported - Milestone 2).
- */
-private fun describeDeepLink(uri: Uri): String =
-    when (uri.host) {
-        "credential_offer" ->
-            runCatching { parseCredentialOfferLink(uri.toString()) }
-                .fold(
-                    onSuccess = { "Received a credential-offer link:\n$it" },
-                    onFailure = { "Received a credential-offer link, but it did not parse: ${it.message}" },
-                )
-        "authorize" -> "Received a pickup/authorize link (handling arrives in Milestone 4):\n$uri"
-        else -> "Received an unrecognised link: $uri"
-    }
 
 @Composable
 private fun PlaceholderScreen(title: String, body: String, onBack: () -> Unit) {
