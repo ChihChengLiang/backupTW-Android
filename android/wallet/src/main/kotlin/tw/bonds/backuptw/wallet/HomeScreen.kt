@@ -10,40 +10,53 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import uniffi.backuptw_core.parseIssuerTrustListPage
 
-private const val TRUST_LIST_URL = "https://frontend.wallet.gov.tw/api/did?size=20&page=0&orgType=1&status=1"
+/**
+ * Display names for the telecom credential types this app can hold -
+ * matched to `core::twdiw::convenience_store_pickup::TELECOM_CREDENTIAL_TYPES`
+ * (the source of truth for which type strings these are), kept here by
+ * hand since there is no FFI-exported display name for a bare type
+ * string. Presentation-only: nothing here makes a trust decision.
+ */
+private val TELECOM_CARD_DISPLAY_NAMES =
+    mapOf(
+        "96979933_name_phonel5_phonel3" to "中華電信門號電子卡",
+        "97179430_fet_vc_prod" to "遠傳電信門號電子卡",
+        "97176270_twmdiwvc_postpaid" to "台灣大哥大門號電子卡",
+    )
 
 @Composable
 fun HomeScreen(onNavigate: (Screen) -> Unit) {
     val context = LocalContext.current
     val credentialStore = remember { CredentialStore(context) }
-    var storedIds by remember { mutableStateOf(credentialStore.allIds()) }
+    val storedIds by remember { mutableStateOf(credentialStore.allIds()) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("有備而來 — dev build", style = MaterialTheme.typography.headlineSmall)
+        Text("有備而來", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "A digital wallet for Taiwan's TWDIW credentials.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Stored credentials", style = MaterialTheme.typography.titleMedium)
             if (storedIds.isEmpty()) {
-                Text("None yet.", style = MaterialTheme.typography.bodyMedium)
+                Text("None yet - apply for a card below.", style = MaterialTheme.typography.bodyMedium)
             } else {
-                storedIds.forEach { id -> Text("• $id", style = MaterialTheme.typography.bodySmall) }
+                storedIds.forEach { id ->
+                    Text("• ${TELECOM_CARD_DISPLAY_NAMES[id] ?: id}", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
 
@@ -51,79 +64,9 @@ fun HomeScreen(onNavigate: (Screen) -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { onNavigate(Screen.ApplyForCard) }) { Text("Apply for a telecom card") }
             Button(onClick = { onNavigate(Screen.PickupCatalog) }) { Text("7-Eleven package pickup") }
-            Button(onClick = { onNavigate(Screen.FixtureDemo) }) { Text("Fixture demo (dev)") }
         }
 
         HorizontalDivider()
-        Text("Infrastructure smoke tests", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Milestone 1: real Keystore signing, real encrypted storage, one " +
-                "real network call - proving the pieces Milestones 3/4 build on.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        KeystoreSmokeTest()
-        StorageSmokeTest(credentialStore) { storedIds = credentialStore.allIds() }
-        TrustListSmokeTest()
-    }
-}
-
-@Composable
-private fun KeystoreSmokeTest() {
-    var result by remember { mutableStateOf<String?>(null) }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Button(onClick = {
-            result = runCatching {
-                val key = KeystoreHolderKey.generate("smoke-test")
-                val signature = key.signRaw("smoke test".toByteArray())
-                "Keystore key generated; public key ${key.publicKeyX963().size} bytes, " +
-                    "signature ${signature.size} bytes."
-            }.fold(onSuccess = { it }, onFailure = { "Failed: ${it.message}" })
-        }) {
-            Text("Generate Keystore key + sign")
-        }
-        result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-    }
-}
-
-@Composable
-private fun StorageSmokeTest(credentialStore: CredentialStore, onStored: () -> Unit) {
-    var result by remember { mutableStateOf<String?>(null) }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Button(onClick = {
-            result = runCatching {
-                val id = "smoke-test"
-                val value = "encrypted-at-${System.currentTimeMillis()}"
-                credentialStore.save(id, value)
-                val reloaded = credentialStore.load(id)
-                credentialStore.delete(id)
-                onStored()
-                if (reloaded == value) "Saved and reloaded from an encrypted file: matched." else "Mismatch: got $reloaded"
-            }.fold(onSuccess = { it }, onFailure = { "Failed: ${it.message}" })
-        }) {
-            Text("Save + reload an encrypted file")
-        }
-        result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-    }
-}
-
-@Composable
-private fun TrustListSmokeTest() {
-    var result by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Button(onClick = {
-            scope.launch {
-                result = "Fetching…"
-                result = runCatching {
-                    val body = withContext(Dispatchers.IO) { TwdiwClient.get(TRUST_LIST_URL) }
-                    val issuers = parseIssuerTrustListPage(body)
-                    "Live trust list: ${issuers.size} issuer(s) on this page. " +
-                        "First: ${issuers.firstOrNull()?.displayName ?: "(none)"}"
-                }.fold(onSuccess = { it }, onFailure = { "Failed: ${it.message}" })
-            }
-        }) {
-            Text("Fetch live trust list (page 0)")
-        }
-        result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        TextButton(onClick = { onNavigate(Screen.DeveloperTools) }) { Text("Developer tools") }
     }
 }

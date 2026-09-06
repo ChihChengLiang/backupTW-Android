@@ -35,7 +35,8 @@ private sealed interface PickupStage {
     data class CatalogError(val message: String) : PickupStage
     data class Ready(val scenario: ConvenienceStorePickupScenario) : PickupStage
     data class Starting(val scenario: ConvenienceStorePickupScenario) : PickupStage
-    data class Consent(val context: PickupContext) : PickupStage
+    data class PreviewingDisclosure(val context: PickupContext) : PickupStage
+    data class Consent(val context: PickupContext, val preview: PickupDisclosurePreview) : PickupStage
     data class Generating(val context: PickupContext) : PickupStage
     data class Barcode(val session: PickupBarcodeSession) : PickupStage
     data class Regenerating(val session: PickupBarcodeSession) : PickupStage
@@ -105,14 +106,25 @@ fun PickupScreen(onBack: () -> Unit) {
                 LaunchedEffect(Unit) {
                     PickupClient.begin(current.scenario) { statusLines = statusLines + it }
                         .fold(
-                            onSuccess = { stage = PickupStage.Consent(it) },
+                            onSuccess = { stage = PickupStage.PreviewingDisclosure(it) },
                             onFailure = { stage = PickupStage.Failed(it.message ?: "failed", PickupStage.Ready(current.scenario)) },
                         )
                 }
             }
 
+            is PickupStage.PreviewingDisclosure -> {
+                Text("Matching a stored card to the request…", style = MaterialTheme.typography.bodyMedium)
+                LaunchedEffect(Unit) {
+                    PickupClient.previewDisclosure(current.context, credentialStore)
+                        .fold(
+                            onSuccess = { stage = PickupStage.Consent(current.context, it) },
+                            onFailure = { stage = PickupStage.Failed(it.message ?: "failed", PickupStage.Ready(current.context.scenario)) },
+                        )
+                }
+            }
+
             is PickupStage.Consent ->
-                ConsentSection(current.context, onConfirm = {
+                ConsentSection(current.context, current.preview, onConfirm = {
                     statusLines = emptyList()
                     stage = PickupStage.Generating(current.context)
                 })
@@ -123,7 +135,9 @@ fun PickupScreen(onBack: () -> Unit) {
                     PickupClient.presentAndGenerate(current.context, credentialStore) { statusLines = statusLines + it }
                         .fold(
                             onSuccess = { stage = PickupStage.Barcode(it) },
-                            onFailure = { stage = PickupStage.Failed(it.message ?: "failed", PickupStage.Consent(current.context)) },
+                            onFailure = {
+                                stage = PickupStage.Failed(it.message ?: "failed", PickupStage.PreviewingDisclosure(current.context))
+                            },
                         )
                 }
             }
@@ -157,7 +171,7 @@ fun PickupScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun ConsentSection(context: PickupContext, onConfirm: () -> Unit) {
+private fun ConsentSection(context: PickupContext, preview: PickupDisclosurePreview, onConfirm: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Service trust verified", style = MaterialTheme.typography.titleMedium)
         Text(
@@ -167,9 +181,18 @@ private fun ConsentSection(context: PickupContext, onConfirm: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
         )
         HorizontalDivider()
+        Text("Data being provided", style = MaterialTheme.typography.titleMedium)
         Text(
-            "By tapping \"Create barcode\", you agree to provide your name and the last " +
-                "five digits of your mobile number to 7-ELEVEN for this parcel pickup check.",
+            "${preview.credentialName} (${preview.issuerName})" +
+                (preview.credentialSerial?.let { "\nCredential ID: $it" } ?: ""),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text("Name: ${preview.holderName}", style = MaterialTheme.typography.bodyMedium)
+        Text("Last 5 digits of phone number: ${preview.phoneLastFive}", style = MaterialTheme.typography.bodyMedium)
+        HorizontalDivider()
+        Text(
+            "By tapping \"Create barcode\", you agree to provide the name and phone-number " +
+                "digits above to 7-ELEVEN for this parcel pickup check.",
             style = MaterialTheme.typography.bodyMedium,
         )
         Button(onClick = onConfirm) { Text("Create barcode") }

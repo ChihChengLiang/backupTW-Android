@@ -9,6 +9,7 @@ import uniffi.backuptw_core.FfiConvenienceStorePickupBarcode
 import uniffi.backuptw_core.FfiFormField
 import uniffi.backuptw_core.FfiTwdiwCredential
 import uniffi.backuptw_core.Oid4VpAuthorizeLink
+import uniffi.backuptw_core.Oid4VpInputDescriptor
 import uniffi.backuptw_core.Oid4VpRequest
 import uniffi.backuptw_core.TwdiwIssuer
 import uniffi.backuptw_core.TwdiwOnChainVerification
@@ -17,6 +18,7 @@ import uniffi.backuptw_core.assembleVpToken
 import uniffi.backuptw_core.authoriseFetchUrl
 import uniffi.backuptw_core.convenienceStorePickupCountdownExpiresAt
 import uniffi.backuptw_core.convenienceStorePickupScenarios
+import uniffi.backuptw_core.credentialSerial
 import uniffi.backuptw_core.formEncode
 import uniffi.backuptw_core.parseAuthorizeLink
 import uniffi.backuptw_core.parseConvenienceStorePickupBarcode
@@ -43,6 +45,15 @@ data class PickupContext(
 )
 
 data class PickupReceipt(val holderDid: String, val holderKeyAlias: String)
+
+/** The exact values about to be disclosed - shown for informed consent before signing anything. */
+data class PickupDisclosurePreview(
+    val credentialName: String,
+    val issuerName: String,
+    val credentialSerial: String?,
+    val holderName: String,
+    val phoneLastFive: String,
+)
 
 data class PickupBarcodeSession(
     val context: PickupContext,
@@ -152,6 +163,23 @@ object PickupClient {
         error("verifier module is not a trusted service")
     }
 
+    /** The specific values a "Create barcode" tap is about to disclose - computed without signing or posting anything. */
+    suspend fun previewDisclosure(context: PickupContext, credentialStore: CredentialStore): Result<PickupDisclosurePreview> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val match = matchAndDisclose(context.request, credentialStore)
+                val claims = match.credential.disclosedClaims.associate { it.name to it.value }
+                val descriptor = match.descriptors.firstOrNull()
+                PickupDisclosurePreview(
+                    credentialName = descriptor?.credentialName ?: "Phone-number credential",
+                    issuerName = descriptor?.issuerName ?: "Credential issuer",
+                    credentialSerial = credentialSerial(match.credential.credentialId ?: match.credentialId),
+                    holderName = claims["name"] ?: "",
+                    phoneLastFive = claims["phonel5"] ?: "",
+                )
+            }
+        }
+
     suspend fun presentAndGenerate(
         context: PickupContext,
         credentialStore: CredentialStore,
@@ -233,6 +261,7 @@ object PickupClient {
         val credential: FfiTwdiwCredential,
         val presented: List<String>,
         val descriptorIds: List<String>,
+        val descriptors: List<Oid4VpInputDescriptor>,
     )
 
     /**
@@ -279,7 +308,7 @@ object PickupClient {
                     val descriptorClaims = descriptor.requestedFields.mapNotNull { it.claimName() }.toSet()
                     reserialiseTwdiwCredential(credential, chosenClaims.intersect(descriptorClaims).toList())
                 }
-            return Match(id, credential, presented, selected.map { it.id })
+            return Match(id, credential, presented, selected.map { it.id }, selected)
         }
         error("no stored card can answer this request")
     }
