@@ -82,6 +82,20 @@ object ReceiveFlow {
                 val credentialEndpoint = fetchCredentialEndpoint(issuerIdentifier)
 
                 onStatus("Requesting an access token…")
+                val configurationId = offer.configurationIds.first()
+                // Sent as measured off the deployment, not because RFC 9396
+                // requires this exact shape - the token endpoint 400s
+                // without it. `tx_code` is deliberately absent, matching the
+                // iOS source: a flow that needs one requires UI this
+                // version has not built (see `offer.requiresTransactionCode`).
+                val authorizationDetails =
+                    JSONArray()
+                        .put(
+                            JSONObject()
+                                .put("type", "openid_credential")
+                                .put("credential_configuration_id", configurationId),
+                        )
+                        .toString()
                 val tokenBody =
                     formEncode(
                         listOf(
@@ -91,15 +105,26 @@ object ReceiveFlow {
                             ),
                             FfiFormField("pre-authorized_code", offer.preAuthorizedCode),
                             FfiFormField("client_id", TOKEN_CLIENT_ID),
+                            FfiFormField("authorization_details", authorizationDetails),
                         ),
                     )
                 val tokenResponse =
                     JSONObject(String(TwdiwClient.postFormEncoded("$issuerIdentifier/token", tokenBody), Charsets.UTF_8))
                 val accessToken = tokenResponse.getString("access_token")
                 val nonce = tokenResponse.getString("c_nonce")
+                // The token response may name a different identifier to
+                // request the credential under; fall back to the
+                // configuration id when it doesn't.
+                val credentialIdentifier =
+                    tokenResponse.optJSONArray("authorization_details")?.let { details ->
+                        (0 until details.length())
+                            .asSequence()
+                            .mapNotNull { details.getJSONObject(it).optJSONArray("credential_identifiers") }
+                            .firstOrNull { it.length() > 0 }
+                            ?.getString(0)
+                    } ?: configurationId
 
                 onStatus("Signing the proof…")
-                val configurationId = offer.configurationIds.first()
                 val holderDid = walletIdentityFromPublicKey(holderKey.publicKeyX963()).jwkDid
                 val proofInput =
                     proofSigningInput(
@@ -114,7 +139,7 @@ object ReceiveFlow {
                 onStatus("Requesting the credential…")
                 val credentialRequestBody =
                     JSONObject()
-                        .put("credential_identifier", configurationId)
+                        .put("credential_identifier", credentialIdentifier)
                         .put("proofs", JSONObject().put("jwt", JSONArray().put(proofJwt)))
                 val credentialResponse =
                     JSONObject(
