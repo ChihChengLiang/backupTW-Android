@@ -48,7 +48,20 @@ class CredentialStore(context: Context) {
         file.name.takeIf { it.endsWith(".jws") }?.removeSuffix(".jws")
     } ?: emptyList()
 
-    private fun fileFor(configurationId: String) = File(directory, "$configurationId.jws")
+    /**
+     * `configurationId` is server-supplied (an offer's own
+     * `credential_configuration_ids` entry) - trusted enough to collect
+     * from once the issuer gates pass, but not enough to build a
+     * filesystem path from unchecked. Fail closed on anything outside a
+     * plain identifier's charset rather than trying to escape it, the
+     * same discipline `core`'s own host/path normalisation uses.
+     */
+    private fun fileFor(configurationId: String): File {
+        require(configurationId.isNotEmpty() && configurationId.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
+            "unsafe credential configuration id"
+        }
+        return File(directory, "$configurationId.jws")
+    }
 
     private fun encryptedFile(file: File) =
         EncryptedFile.Builder(appContext, file, masterKey, EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB)
