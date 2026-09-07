@@ -101,7 +101,7 @@ pub fn is_trusted_response_url(candidate: &str) -> bool {
         && parsed.fragment().is_none()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum AgePredicateProofError {
     #[error("randomness unavailable")]
     RandomnessUnavailable,
@@ -128,7 +128,7 @@ use AgePredicateProofError as Error;
 /// A verifier-generated request. Unlike the older MOICA holding-proof
 /// flow, the nonce exists before proving and is checked as a public
 /// circuit input, rather than being bound after the fact.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct AgePredicateProofRequest {
     /// A fresh one-time BLE service identifier for the two-device flow.
     pub service_id: String,
@@ -331,7 +331,7 @@ impl AgePredicateProofRequest {
 /// SD-JWT, disclosure, birth date, witness or proving key ever leaves the
 /// holder. `prepare_proof`/`show_proof` are opaque to this crate — it
 /// assembles and bounds-checks them, never inspects their contents.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct AgePredicateProofPackage {
     pub version: i64,
     pub request_nonce: String,
