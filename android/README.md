@@ -71,6 +71,33 @@ silently miss (or hit a different button) after it does - `adb shell
 uiautomator dump` before each tap, or scroll to a known position first,
 rather than reusing coordinates across state changes.
 
+### The "ZK age-predicate proof" section also needs the Mopro artifacts
+
+`DeveloperToolsScreen.kt`'s real-proving smoke test loads `uniffi.mopro`
+(`mopro.kt` + `libopenac_age_mobile_app.so`/`libwitnesscalc_{jwt_2k,show}.so`/
+`libc++_shared.so`) alongside `backuptw_core` - the same artifacts `app/`
+(zkharness) uses, sourced the same way (see the `app/` section below), just
+also copied into `wallet/src/main/kotlin/uniffi/mopro/` and
+`wallet/src/main/jniLibs/<abi>/`. Both UniFFI bindings coexist fine in one
+process (separate `uniffi.mopro`/`uniffi.backuptw_core` packages, confirmed
+2026-09-07) - this is config copying, not a build config change.
+
+The `.r1cs` circuit files need staging the same way `app/`'s does (see
+"Running the check" below), just for `wallet`'s package
+(`tw.bonds.backuptw.wallet`) instead of `zkharness`'s.
+
+**Emulator RAM**: the default `2G` AVD config is not enough - Prepare's
+proving peaks around 2.3-2.8GB RSS (see `mobile/README.md`'s timing table
+in the zkID clone), and a 2GB guest's own low-memory killer starts
+thrashing the whole system before the app even gets there. `hw.ramSize =
+6144` in the AVD's `config.ini` (`~/.android/avd/<name>.avd/config.ini`)
+worked better in practice, though on a heavily-loaded host, real proving is
+CPU- and memory-intensive enough that it may still starve the UI thread for
+long stretches (tens of seconds with no frame updates) or fail to complete
+under contention from other processes on the same host - this is a genuine
+resource-ceiling finding, not a bug in the wiring. A real device or a less
+contended host is the more reliable way to exercise this end to end.
+
 ## `app/` (zkharness): regenerating the native library + bindings
 
 The `app/src/main/jniLibs/*/lib*.so` and
