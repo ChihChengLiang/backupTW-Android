@@ -20,6 +20,16 @@ use p256::ecdsa::SigningKey;
 use p256::elliptic_curve::rand_core::OsRng;
 
 use crate::identity::{did_key, jwk_did_key};
+use crate::presentation::offline_verifier::{
+    self as offline_verifier, DisclosedClaim, OfflineIssuerTrustSnapshot, RevocationStatus,
+    VerificationCaveat, VerificationFailure,
+};
+use crate::presentation::request::{
+    PresentationCredentialSource, PresentationRequest, PresentationRequestError,
+};
+use crate::presentation::verifiable_presentation::{
+    self as verifiable_presentation, EnvelopedVerifiableCredential, VerifiablePresentationError,
+};
 use crate::twdiw::collection;
 use crate::twdiw::convenience_store_pickup::{
     self, ConvenienceStorePickupBarcode, ConvenienceStorePickupCountdown,
@@ -580,6 +590,209 @@ pub fn form_encode(fields: Vec<FfiFormField>) -> String {
     collection::form_encode(&pairs)
 }
 
+// MARK: - Offline presentation (holder builds one to show; this device can
+// also act as the verifier checking one shown to it).
+//
+// Same boundary as everywhere else: transport (BLE/QR) and Keystore-backed
+// signing stay native. This exposes presentation::{request,
+// verifiable_presentation, offline_verifier} - fully ported and tested,
+// unwired until now.
+
+/// Mints a fresh verifier request: a challenge, a one-time BLE service id,
+/// and the verifier's stated purpose/audience/credential source.
+/// `now_unix_seconds`: this verifier's clock, Unix seconds.
+#[uniffi::export]
+pub fn generate_presentation_request(
+    purpose: String,
+    audience: Option<String>,
+    credential_source: PresentationCredentialSource,
+    now_unix_seconds: i64,
+) -> Result<PresentationRequest, PresentationRequestError> {
+    PresentationRequest::generate(
+        &purpose,
+        audience.as_deref(),
+        credential_source,
+        now_unix_seconds,
+    )
+}
+
+/// The exact text to put in the verifier's QR.
+#[uniffi::export]
+pub fn encode_presentation_request(request: PresentationRequest) -> String {
+    request.encoded_for_transport()
+}
+
+/// Reads what a scanner handed back, running it through the same
+/// validation a request built on-device would go through.
+#[uniffi::export]
+pub fn decode_presentation_request(
+    text: String,
+) -> Result<PresentationRequest, PresentationRequestError> {
+    PresentationRequest::decode(&text)
+}
+
+/// Wraps a device-signed compact-JWS credential for presenting.
+#[uniffi::export]
+pub fn envelope_compact_jws(jws: String) -> EnvelopedVerifiableCredential {
+    EnvelopedVerifiableCredential::enveloping_compact_jws(&jws)
+}
+
+/// Wraps a `MoicaSignedCredential` (自然人憑證-signed) envelope for
+/// presenting.
+#[uniffi::export]
+pub fn envelope_moica_signed(serialized: String) -> EnvelopedVerifiableCredential {
+    EnvelopedVerifiableCredential::enveloping_moica_signed(&serialized)
+}
+
+/// Wraps a TWDIW SD-JWT credential for presenting.
+#[uniffi::export]
+pub fn envelope_sd_jwt(serialized: String) -> EnvelopedVerifiableCredential {
+    EnvelopedVerifiableCredential::enveloping_sd_jwt(&serialized)
+}
+
+/// The wrapped compact-JWS bytes, or `None` if this envelope carries some
+/// other media type.
+#[uniffi::export]
+pub fn compact_jws_from_envelope(envelope: EnvelopedVerifiableCredential) -> Option<String> {
+    envelope.compact_jws().map(str::to_string)
+}
+
+/// The wrapped `MoicaSignedCredential` serialization, or `None` if this
+/// envelope carries some other media type.
+#[uniffi::export]
+pub fn moica_signed_from_envelope(envelope: EnvelopedVerifiableCredential) -> Option<String> {
+    envelope.moica_signed_serialization()
+}
+
+/// The wrapped TWDIW SD-JWT serialization, or `None` if this envelope
+/// carries some other media type.
+#[uniffi::export]
+pub fn sd_jwt_from_envelope(envelope: EnvelopedVerifiableCredential) -> Option<String> {
+    envelope.sd_jwt_serialization().map(str::to_string)
+}
+
+/// `credentialSubject.id` off a device-signed compact-JWS credential this
+/// device's own protected store already holds, without re-verifying it -
+/// so a caller can check holder binding before presenting.
+#[uniffi::export]
+pub fn presentation_subject_identifier(
+    credential_jws: String,
+) -> Result<String, VerifiablePresentationError> {
+    verifiable_presentation::subject_identifier(&credential_jws)
+}
+
+/// The same reading as [`presentation_subject_identifier`], for a stored
+/// `MoicaSignedCredential` envelope instead of a compact JWS.
+#[uniffi::export]
+pub fn presentation_moica_subject_identifier(
+    serialized_envelope: String,
+) -> Result<String, VerifiablePresentationError> {
+    verifiable_presentation::moica_subject_identifier(&serialized_envelope)
+}
+
+/// The bytes a presentation JWS signature covers. Sign the result
+/// externally (Keystore) and hand the raw `r ‖ s` signature to
+/// [`assemble_presentation_jws`]. `created_at_unix_seconds`: this holder's
+/// clock, Unix seconds.
+#[uniffi::export]
+pub fn presentation_signing_input(
+    envelope: EnvelopedVerifiableCredential,
+    request: PresentationRequest,
+    holder_did: String,
+    holder_public_key_x963: Vec<u8>,
+    created_at_unix_seconds: i64,
+) -> Result<String, VerifiablePresentationError> {
+    let created_at = Utc
+        .timestamp_opt(created_at_unix_seconds, 0)
+        .single()
+        .ok_or(VerifiablePresentationError::InvalidTimestamp)?;
+    verifiable_presentation::presentation_signing_input(
+        envelope,
+        &request,
+        &holder_did,
+        &holder_public_key_x963,
+        created_at,
+    )
+}
+
+/// Combines a `signing_input` (from [`presentation_signing_input`]) with
+/// its raw `r ‖ s` ECDSA signature into a compact presentation JWS.
+/// `signature` must be exactly 64 bytes.
+#[uniffi::export]
+pub fn assemble_presentation_jws(
+    signing_input: String,
+    signature: Vec<u8>,
+) -> Result<String, FfiError> {
+    let signature: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| FfiError::Failed("signature must be 64 bytes".to_string()))?;
+    Ok(verifiable_presentation::assemble_presentation_jws(
+        &signing_input,
+        &signature,
+    ))
+}
+
+/// A verified presentation, ready to display. Mirrors
+/// `offline_verifier::VerifiedPresentation` field-for-field except
+/// `valid_from`/`valid_until`/`presented_at`, which become Unix-seconds
+/// `i64` in place of `DateTime<Utc>` - see this module's doc comment.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FfiVerifiedPresentation {
+    pub holder: String,
+    pub cardholder_name: Option<String>,
+    pub cardholder_name_was_checked: bool,
+    pub withheld_claim_count: i64,
+    pub credential_types: Vec<String>,
+    pub claims: Vec<DisclosedClaim>,
+    pub valid_from_unix_seconds: i64,
+    pub valid_until_unix_seconds: Option<i64>,
+    pub presented_at_unix_seconds: i64,
+    pub caveats: Vec<VerificationCaveat>,
+    pub revocation: RevocationStatus,
+}
+
+impl From<offline_verifier::VerifiedPresentation> for FfiVerifiedPresentation {
+    fn from(verified: offline_verifier::VerifiedPresentation) -> Self {
+        Self {
+            holder: verified.holder,
+            cardholder_name: verified.cardholder_name,
+            cardholder_name_was_checked: verified.cardholder_name_was_checked,
+            withheld_claim_count: verified.withheld_claim_count,
+            credential_types: verified.credential_types,
+            claims: verified.claims,
+            valid_from_unix_seconds: verified.valid_from.timestamp(),
+            valid_until_unix_seconds: verified.valid_until.map(|d| d.timestamp()),
+            presented_at_unix_seconds: verified.presented_at.timestamp(),
+            caveats: verified.caveats,
+            revocation: verified.revocation,
+        }
+    }
+}
+
+/// Checks `presentation_jws` against the request this verifier issued.
+/// `now_unix_seconds`: this verifier's clock, Unix seconds. `issuer_trust`:
+/// the offline trust snapshot for the TWDIW credential's issuer, if this
+/// device's (native-owned) store has one - irrelevant for a device-signed
+/// presentation.
+#[uniffi::export]
+pub fn verify_offline_presentation(
+    presentation_jws: String,
+    request: PresentationRequest,
+    now_unix_seconds: i64,
+    issuer_trust: Option<OfflineIssuerTrustSnapshot>,
+) -> Result<FfiVerifiedPresentation, VerificationFailure> {
+    let now = Utc
+        .timestamp_opt(now_unix_seconds, 0)
+        .single()
+        .ok_or(VerificationFailure::PresentationTimestampUnreadable)?;
+    match offline_verifier::verify(&presentation_jws, &request, now, issuer_trust.as_ref()) {
+        offline_verifier::VerificationOutcome::Verified(verified) => {
+            Ok(FfiVerifiedPresentation::from(verified))
+        }
+        offline_verifier::VerificationOutcome::Rejected(failure) => Err(failure),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1007,5 +1220,184 @@ mod tests {
         assert!(body.contains("client_id=moda_dw"));
         assert!(body
             .contains("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code"));
+    }
+
+    // MARK: - Offline presentation
+
+    use p256::ecdsa::{signature::Signer, Signature};
+
+    const PRESENTED_AT: i64 = 1_754_400_000;
+
+    fn sign_raw(key: &SigningKey, message: &[u8]) -> Vec<u8> {
+        let signature: Signature = key.sign(message);
+        signature.to_bytes().to_vec()
+    }
+
+    struct PresentationFixture {
+        key: SigningKey,
+        did: String,
+        x963: Vec<u8>,
+        credential_jws: String,
+    }
+
+    fn presentation_fixture() -> PresentationFixture {
+        let key = SigningKey::random(&mut OsRng);
+        let vk: p256::ecdsa::VerifyingKey = *key.verifying_key();
+        let x963 = vk.to_encoded_point(false).as_bytes().to_vec();
+        let did = did_key::did_from_p256_x963(&x963).unwrap();
+
+        let model = crate::credential::NationalIdModel {
+            nationality: Some("中華民國（臺灣）".into()),
+            unified_no: Some("A123456789".into()),
+            name: Some("王小明".into()),
+            birthdate: Some("0700101".into()),
+            address_of_household: Some("臺北市中正區".into()),
+        };
+        let issued_at = Utc.timestamp_opt(PRESENTED_AT, 0).unwrap();
+        let credential = crate::credential::national_id(&model, &did, issued_at);
+        let signing_input = crate::credential::jws_signing_input(&credential, &did).unwrap();
+        let signature = sign_raw(&key, signing_input.as_bytes());
+        let signature_array: [u8; 64] = signature.as_slice().try_into().unwrap();
+        let credential_jws = crate::credential::assemble_jws(&signing_input, &signature_array);
+
+        PresentationFixture {
+            key,
+            did,
+            x963,
+            credential_jws,
+        }
+    }
+
+    fn signed_presentation(fixture: &PresentationFixture, request: &PresentationRequest) -> String {
+        let envelope = envelope_compact_jws(fixture.credential_jws.clone());
+        let signing_input = presentation_signing_input(
+            envelope,
+            request.clone(),
+            fixture.did.clone(),
+            fixture.x963.clone(),
+            PRESENTED_AT,
+        )
+        .unwrap();
+        let signature = sign_raw(&fixture.key, signing_input.as_bytes());
+        assemble_presentation_jws(signing_input, signature).unwrap()
+    }
+
+    #[test]
+    fn presentation_request_round_trips_through_encode_and_decode() {
+        let request = generate_presentation_request(
+            "里長辦公室核對身分".to_string(),
+            None,
+            PresentationCredentialSource::SelfIssued,
+            PRESENTED_AT,
+        )
+        .unwrap();
+        let encoded = encode_presentation_request(request.clone());
+        let decoded = decode_presentation_request(encoded).unwrap();
+        assert_eq!(decoded, request);
+    }
+
+    #[test]
+    fn decode_presentation_request_rejects_malformed_text() {
+        assert_eq!(
+            decode_presentation_request("not json".to_string()),
+            Err(PresentationRequestError::MalformedEncoding)
+        );
+    }
+
+    #[test]
+    fn envelope_wrap_and_unwrap_round_trips_for_every_credential_kind() {
+        let compact = envelope_compact_jws("header.payload.sig".to_string());
+        assert_eq!(
+            compact_jws_from_envelope(compact.clone()),
+            Some("header.payload.sig".to_string())
+        );
+        assert_eq!(moica_signed_from_envelope(compact.clone()), None);
+        assert_eq!(sd_jwt_from_envelope(compact), None);
+
+        let moica = envelope_moica_signed("{\"payload\":\"x\"}".to_string());
+        assert_eq!(
+            moica_signed_from_envelope(moica.clone()),
+            Some("{\"payload\":\"x\"}".to_string())
+        );
+        assert_eq!(compact_jws_from_envelope(moica), None);
+
+        let sd_jwt = envelope_sd_jwt("eyJ~disclosure~".to_string());
+        assert_eq!(
+            sd_jwt_from_envelope(sd_jwt.clone()),
+            Some("eyJ~disclosure~".to_string())
+        );
+        assert_eq!(compact_jws_from_envelope(sd_jwt), None);
+    }
+
+    #[test]
+    fn presentation_subject_identifier_reads_the_credential_subject_id_via_ffi() {
+        let fixture = presentation_fixture();
+        assert_eq!(
+            presentation_subject_identifier(fixture.credential_jws.clone()).unwrap(),
+            fixture.did
+        );
+    }
+
+    #[test]
+    fn assemble_presentation_jws_rejects_a_wrong_length_signature() {
+        assert_eq!(
+            assemble_presentation_jws("a.b".to_string(), vec![0; 10]),
+            Err(FfiError::Failed("signature must be 64 bytes".to_string()))
+        );
+    }
+
+    #[test]
+    fn offline_presentation_round_trips_through_the_ffi_boundary_and_verifies() {
+        let fixture = presentation_fixture();
+        let request = generate_presentation_request(
+            "查驗".to_string(),
+            None,
+            PresentationCredentialSource::SelfIssued,
+            PRESENTED_AT,
+        )
+        .unwrap();
+        let jws = signed_presentation(&fixture, &request);
+
+        let verified = verify_offline_presentation(jws, request, PRESENTED_AT, None).unwrap();
+        assert_eq!(verified.holder, fixture.did);
+        assert_eq!(
+            verified.credential_types,
+            vec!["VerifiableCredential", "NationalIDCredential"]
+        );
+        assert!(verified
+            .caveats
+            .contains(&VerificationCaveat::RevocationNotChecked));
+        assert_eq!(
+            verified.revocation,
+            RevocationStatus::NotChecked {
+                reason:
+                    crate::presentation::offline_verifier::NotCheckedReason::NoCertificateToCheck
+            }
+        );
+    }
+
+    #[test]
+    fn verify_offline_presentation_rejects_a_presentation_answering_another_challenge_via_ffi() {
+        let fixture = presentation_fixture();
+        let request = generate_presentation_request(
+            "查驗".to_string(),
+            None,
+            PresentationCredentialSource::SelfIssued,
+            PRESENTED_AT,
+        )
+        .unwrap();
+        let jws = signed_presentation(&fixture, &request);
+
+        let other_request = generate_presentation_request(
+            "查驗".to_string(),
+            None,
+            PresentationCredentialSource::SelfIssued,
+            PRESENTED_AT,
+        )
+        .unwrap();
+        assert_eq!(
+            verify_offline_presentation(jws, other_request, PRESENTED_AT, None),
+            Err(VerificationFailure::ChallengeMismatch)
+        );
     }
 }

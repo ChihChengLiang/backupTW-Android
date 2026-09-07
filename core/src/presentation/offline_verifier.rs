@@ -50,7 +50,7 @@ use crate::twdiw::onchain;
 /// say on its own. Every one is attached to a presentation that passed
 /// every check - these exist because a bare 「驗證通過」 lets a verifier
 /// read guarantees into the result that this design does not provide.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum VerificationCaveat {
     NoNetworkQuery,
     RevocationNotChecked,
@@ -66,7 +66,7 @@ pub enum VerificationCaveat {
     NotBoundToThisVerifier,
 }
 
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error, uniffi::Error)]
 pub enum VerificationFailure {
     // Structure
     #[error("presentation is not a JWS")]
@@ -94,7 +94,7 @@ pub enum VerificationFailure {
     #[error("credential missing")]
     CredentialMissing,
     #[error("presentation carries multiple credentials: {count}")]
-    PresentationCarriesMultipleCredentials { count: usize },
+    PresentationCarriesMultipleCredentials { count: u32 },
     #[error("credential not enveloped")]
     CredentialNotEnveloped,
     #[error("credential is not a JWS")]
@@ -155,7 +155,7 @@ pub enum VerificationFailure {
     DeviceClockPrecedesCertificate { valid_from: i64 },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct DisclosedClaim {
     pub term: String,
     pub value: String,
@@ -209,14 +209,14 @@ impl VerificationOutcome {
 
 // MARK: - Revocation (shape only - see module docs)
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum RevocationStatus {
     Revoked { snapshot: RevocationSnapshotInfo },
     NotRevokedInThisSnapshot { snapshot: RevocationSnapshotInfo },
     NotChecked { reason: NotCheckedReason },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum NotCheckedReason {
     SnapshotUnavailable,
     SnapshotUnusable,
@@ -224,7 +224,7 @@ pub enum NotCheckedReason {
     NoCertificateToCheck,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct RevocationSnapshotInfo {
     pub root: String,
     /// `YYYYMMDDHH`.
@@ -288,7 +288,7 @@ pub fn caveat_for_revocation_status(
 /// Reading/writing this snapshot to disk stays native
 /// (`docs/2026-09-05-decisions-and-roadmap.md`); this module only compares
 /// one already-looked-up snapshot against a credential's issuer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct OfflineIssuerTrustSnapshot {
     pub issuer_did: String,
     pub display_name: String,
@@ -617,7 +617,7 @@ fn enveloped_credential(
     if entries.len() != 1 {
         return Err(
             VerificationFailure::PresentationCarriesMultipleCredentials {
-                count: entries.len(),
+                count: entries.len() as u32,
             },
         );
     }
