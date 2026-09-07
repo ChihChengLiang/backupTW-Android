@@ -30,7 +30,7 @@ pub const MAXIMUM_CHALLENGE_LENGTH: usize = 64;
 pub const MAXIMUM_PURPOSE_LENGTH: usize = 100;
 pub const MAXIMUM_AUDIENCE_LENGTH: usize = 128;
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum PresentationRequestError {
     /// The system CSPRNG refused. Deliberately reported rather than
     /// falling back to a weaker source - see [`PresentationRequest::generate`].
@@ -54,7 +54,7 @@ pub enum PresentationRequestError {
 
 /// Which locally stored credential family the verifier is asking to
 /// inspect, named by the verifier rather than guessed by the holder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum)]
 pub enum PresentationCredentialSource {
     #[default]
     SelfIssued,
@@ -80,7 +80,7 @@ impl PresentationCredentialSource {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PresentationRequest {
     /// The verifier's freshness value, base64url. Replay protection rests
     /// entirely on this being unpredictable and consumed exactly once.

@@ -44,7 +44,7 @@ use crate::moica::MoicaSignedCredential;
 use crate::presentation::request::PresentationRequest;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum VerifiablePresentationError {
     /// The holder identifier is not a `did:key:` DID.
     #[error("unsupported holder did")]
@@ -64,6 +64,10 @@ pub enum VerifiablePresentationError {
     /// or its payload has no subject identifier.
     #[error("malformed card-signed credential")]
     MalformedCardSignedCredential,
+    /// `created_at`, as a Unix-seconds `i64` at the FFI boundary, could
+    /// not be represented as a valid instant.
+    #[error("invalid timestamp")]
+    InvalidTimestamp,
 }
 
 pub const BASE_TYPE: &str = "VerifiablePresentation";
@@ -134,7 +138,7 @@ impl VerifiablePresentation {
 /// *string*, and a bare string in `verifiableCredential` verifies but
 /// loses its credential on JSON-LD expansion - this wrapper is what makes
 /// it a node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct EnvelopedVerifiableCredential {
     #[serde(rename = "@context")]
     pub context: String,
