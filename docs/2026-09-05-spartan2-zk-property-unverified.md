@@ -78,11 +78,87 @@ ZK-soundness are orthogonal concerns.
   — worth checking both against the same underlying commitment-scheme
   code once it's read.
 
+## Investigation update (2026-09-07)
+
+Read the vendored fork's actual source at the exact commit Cargo
+resolves — a full checkout already existed locally at
+`~/.cargo/git/checkouts/spartan2-44f7102e5f8bf4df/d687dbb`, confirmed
+via `wallet-unit-poc/mobile/Cargo.lock` to be exactly
+`d687dbb639eccbdd21e62fecec97c5826bc4dbbf`, matching this doc's earlier
+short hash.
+
+**The "not zero-knowledge" README caveat describes the wrong module for
+this app.** The crate ships two separate SNARK implementations under
+one name:
+
+- `spartan::R1CSSNARK` — the plain, non-ZK construction the top-level
+  README's "About this library" section is describing.
+- `zk_spartan::R1CSSNARK` — a second, separate implementation with
+  genuine ZK hardening: per-round random masking scalars in the
+  sum-check protocol (`zk_spartan.rs`, `E::Scalar::random(&mut OsRng)`
+  feeding `zk_sumcheck.rs`'s masked evaluations), a real *hiding*
+  Hyrax commitment (`provider/pcs/hyrax_pc.rs`'s `HyraxBlind`, a
+  dedicated blind generator `ck.h` combined via random blind scalars,
+  with `combine_blinds`/`fold_blinds`/`reblind` operations), and an
+  explicit "Reblind instance and witness" step in the prove path.
+
+That last point matters beyond the cryptography: **the reblind
+terminology in this app's own proving flow — `generateSharedBlinds`,
+`reblindJwt`, `reblindShow` in `mopro.kt`/`ZKProver.swift` — is not a
+coincidental naming overlap.** It's calling into this exact mechanism.
+
+**Confirmed the actually-used code path, not just its existence.**
+`ecdsa-spartan2/src/setup.rs` (`setup_circuit_keys`) and
+`ecdsa-spartan2/src/prover.rs` both import `zk_spartan::R1CSSNARK`
+specifically (`use spartan2::{..., zk_spartan::R1CSSNARK}`) — neither
+file imports or uses `spartan::R1CSSNARK`, the non-ZK one the README
+caveat actually describes.
+
+**Provenance of the fork itself supports this reading.** Its
+`Cargo.toml` names it `spartan2`, authored by Srinath Setty (the
+Spartan paper's author, CRYPTO 2020), `repository =
+"https://github.com/Microsoft/Spartan2"` — this is Microsoft's own
+reference crate, forked by `0xVikasRushi` to add the ECDSA/
+`openac-sdk` circuit, not a third-party reimplementation. The README's
+general-purpose caveat almost certainly describes the library's
+default/simplest construction and was never updated to scope out the
+`zk_spartan` module the library also ships.
+
+**One loose end, left for whoever does the expert review below.**
+`zk_sumcheck.rs::prove_quad` (and its higher-degree sibling) has a
+commented-out `// FIXME Write masks into transcript` right before the
+per-round loop. The *effect* of each mask is absorbed into the
+Fiat-Shamir transcript (the masked polynomial `poly` — evaluations
+already shifted by the round's mask — is what gets
+`transcript.absorb(b"p", &poly)`, before the verifier's challenge is
+derived from it), which is the standard construction and may be why
+absorbing the raw masks was judged redundant. But a `FIXME` sitting
+directly next to masking logic in a ZK sum-check implementation is
+exactly the kind of detail a code read can surface but not clear —
+whether this is genuinely fine, dead-code residue, or a real gap needs
+someone who can reason about the protocol's soundness/ZK proof
+directly, not just read the code.
+
+**Net effect on this finding.** Substantially de-risked: the caveat
+this doc opened with almost certainly does not apply to the code path
+this app actually calls. Not fully closed — the FIXME above, and the
+fact that "the masking structurally matches known ZK-sum-check
+constructions" is not the same as "a cryptographer confirmed the
+simulator argument holds for this exact implementation," are reasons
+to keep this open pending the expert pass the original doc already
+called for, rather than close it on a code read alone.
+
 ## Status
 
-Unverified. Functional validation (Phase 1's fixed-vector go/no-go gate,
-`age_assets.rs`) was continued in parallel per project-owner direction
-2026-09-05, since functional correctness and the ZK property are
-orthogonal and the fixed-vector run is cheap to keep exercising — but its
-passing does **not** clear this concern, and should not be read as doing
-so by anyone reviewing this later.
+Substantially de-risked, not closed. The specific code path this app
+depends on (`ecdsa-spartan2` → `zk_spartan::R1CSSNARK` →
+`HyraxPCS`/`zk_sumcheck`) has real random blinding and hiding
+commitments, structurally matching known ZK-sum-check constructions —
+the vendored fork's top-level "not zero-knowledge" README caveat
+appears to describe a different, unused module in the same crate. A
+cryptographer should still confirm the masking/transcript construction
+holds (see the `FIXME` noted above) before this is treated as a fully
+verified privacy guarantee. Functional validation (Phase 1's
+fixed-vector go/no-go gate, `age_assets.rs`) remains orthogonal to this
+and was correctly continued in parallel per project-owner direction
+2026-09-05.
