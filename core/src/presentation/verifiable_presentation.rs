@@ -11,19 +11,19 @@
 //! `challenge` itself) is dropped *silently* by expansion while the JWS
 //! still verifies.
 //!
-//! **Scoped to the JOSE/device-key path.** `MOICASignedCredential` (the
-//! cardholder-certificate envelope this app now issues by default) is not
-//! yet ported, so the dispatcher that picks between a card-signed and a
-//! device-signed stored credential (`create(credentialJWS:...)` in the
-//! Swift source) is not ported either. What *is* here is what that
-//! dispatcher hands off to either way: [`subject_identifier`] (read
-//! `credentialSubject.id` off a stored credential without verifying it,
-//! so a caller can check holder binding before presenting) and
-//! [`presentation_signing_input`]/[`assemble_presentation_jws`] (build
-//! and finish a presentation around an already-typed
-//! [`EnvelopedVerifiableCredential`] - used today for TWDIW SD-JWT cards,
-//! after `TWDIWCredentialReader` has checked the issuer signature,
-//! disclosure commitments and `cnf.jwk` binding).
+//! Presenting is format-agnostic once a stored credential is wrapped as
+//! an [`EnvelopedVerifiableCredential`]: [`presentation_signing_input`]/
+//! [`assemble_presentation_jws`] build and finish a presentation around
+//! whichever envelope a caller hands in, unchanged whether the wrapped
+//! credential is a device-signed JWS, a TWDIW SD-JWT (after
+//! `TWDIWCredentialReader` has checked the issuer signature, disclosure
+//! commitments and `cnf.jwk` binding), or a `MOICASignedCredential`
+//! (`enveloping_moica_signed`) - after
+//! `moica::MoicaSignedCredential::verify_against` has checked the
+//! citizen-certificate chain and signature. [`subject_identifier`]/
+//! [`moica_subject_identifier`] read `credentialSubject.id` off a
+//! stored credential of either self-issued form, without re-verifying
+//! it, so a caller can check holder binding before presenting.
 //!
 //! Key storage stays native, so this follows the same split as
 //! `credential::jws_signing_input`/`assemble_jws`: this crate builds the
@@ -40,6 +40,7 @@ use crate::credential::{
     CREDENTIALS_V2_CONTEXT, TERM_NAMESPACE,
 };
 use crate::identity::{did_key, jwk_did_key};
+use crate::moica::MoicaSignedCredential;
 use crate::presentation::request::PresentationRequest;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 
@@ -59,6 +60,10 @@ pub enum VerifiablePresentationError {
     /// payload is not a credential object with a subject identifier.
     #[error("malformed credential")]
     MalformedCredential,
+    /// The stored credential is not a `MoicaSignedCredential` envelope,
+    /// or its payload has no subject identifier.
+    #[error("malformed card-signed credential")]
+    MalformedCardSignedCredential,
 }
 
 pub const BASE_TYPE: &str = "VerifiablePresentation";
@@ -227,6 +232,27 @@ pub fn subject_identifier(credential_jws: &str) -> Result<String, VerifiablePres
         .filter(|s| !s.is_empty())
         .ok_or(VerifiablePresentationError::MalformedCredential)?;
     Ok(identifier.to_string())
+}
+
+/// The same reading [`subject_identifier`] does, for a stored
+/// `MoicaSignedCredential` instead of a compact JWS - without verifying
+/// the card signature, for the same reason: this device's own protected
+/// store already holds it, and re-verifying here would duplicate a job
+/// that belongs to whoever presents to a verifier next.
+pub fn moica_subject_identifier(
+    serialized_envelope: &str,
+) -> Result<String, VerifiablePresentationError> {
+    let envelope = MoicaSignedCredential::parse(serialized_envelope)
+        .map_err(|_| VerifiablePresentationError::MalformedCardSignedCredential)?;
+    let credential = envelope
+        .credential()
+        .map_err(|_| VerifiablePresentationError::MalformedCardSignedCredential)?;
+    credential
+        .credential_subject
+        .get("id")
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .ok_or(VerifiablePresentationError::MalformedCardSignedCredential)
 }
 
 /// The bytes a JWS signature over a presentation covers, wrapping one
@@ -778,6 +804,69 @@ mod tests {
                 Err(VerifiablePresentationError::MalformedCredential)
             );
         }
+    }
+
+    #[test]
+    fn moica_subject_identifier_reads_the_credential_subject_id() {
+        use crate::moica::{assemble, to_be_signed};
+        use rand::rngs::OsRng as MoicaOsRng;
+        use rsa::pkcs1v15::Pkcs1v15Sign;
+        use rsa::RsaPrivateKey;
+        use sha2::{Digest, Sha256};
+
+        let did = "did:key:zSelfIssuedMoicaHolder".to_string();
+        let credential = national_id_for_test(&did);
+        let (tbs, payload_bytes) = to_be_signed(&credential).unwrap();
+        let holder_key = RsaPrivateKey::new(&mut MoicaOsRng, 2048).unwrap();
+        let signature = holder_key
+            .sign(
+                Pkcs1v15Sign::new::<Sha256>(),
+                &Sha256::digest(tbs.as_bytes()),
+            )
+            .unwrap();
+        let envelope = assemble(
+            &payload_bytes,
+            base64_standard(&[0x30, 0x00]),
+            base64_standard(&signature),
+            None,
+            Vec::new(),
+        );
+
+        assert_eq!(
+            moica_subject_identifier(&envelope.serialized().unwrap()).unwrap(),
+            did
+        );
+    }
+
+    #[test]
+    fn moica_subject_identifier_rejects_a_non_envelope() {
+        for garbage in ["", "{}", "not json", "abc.def.ghi"] {
+            assert_eq!(
+                moica_subject_identifier(garbage),
+                Err(VerifiablePresentationError::MalformedCardSignedCredential)
+            );
+        }
+    }
+
+    fn national_id_for_test(did: &str) -> crate::credential::VerifiableCredential {
+        use crate::credential::{national_id, NationalIdModel};
+        use chrono::TimeZone;
+        national_id(
+            &NationalIdModel {
+                nationality: Some("TW".to_string()),
+                unified_no: Some("A123456789".to_string()),
+                name: Some("陳筱玲".to_string()),
+                birthdate: Some("0700605".to_string()),
+                address_of_household: None,
+            },
+            did,
+            Utc.timestamp_opt(1_757_000_000, 0).unwrap(),
+        )
+    }
+
+    fn base64_standard(bytes: &[u8]) -> String {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        STANDARD.encode(bytes)
     }
 
     #[test]

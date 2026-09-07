@@ -9,8 +9,8 @@ pub mod credential;
 pub mod issuer_certificate;
 
 pub use credential::{
-    to_be_signed, MoicaCredentialProof, MoicaCredentialVerification, MoicaSignedCredential,
-    MoicaSignedCredentialError,
+    assemble, to_be_signed, MoicaCredentialProof, MoicaCredentialVerification,
+    MoicaSignedCredential, MoicaSignedCredentialError,
 };
 pub use issuer_certificate::{
     CertificateValidity, DistinguishedNameAttribute, IssuerCertificate, IssuerCertificateError,

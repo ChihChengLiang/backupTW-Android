@@ -8,32 +8,23 @@
 //! and the relay `PresentationRequest`/`VerificationCaveat::VerifierNotAuthenticated`
 //! document but cannot close.
 //!
-//! **Scoped to two of the three credential-securing mechanisms.** Swift's
+//! **All three credential-securing mechanisms.** Swift's
 //! `envelopedCredential` dispatches on the envelope's media type to one of
 //! three checkers: a device-signed JWS, a card-signed (`MOICASignedCredential`,
-//! X.509/自然人憑證) envelope, or a TWDIW SD-JWT. `MOICASignedCredential` is
-//! not yet ported (see `presentation::verifiable_presentation`'s module
-//! docs for the same boundary on the presenting side), so this reads only
-//! the device-signed and TWDIW SD-JWT paths - both fully, including the
-//! shared holder-binding/freshness/validity orchestration every path goes
-//! through. A card-signed envelope is still *recognised* by its media type
-//! (never sniffed from other bytes - that would be the type-confusion bug
-//! this file's own Swift test suite is named after), and refused with
-//! `VerificationFailure::CredentialUnreadable`. That is not a new failure
-//! mode invented for this gap: it is exactly what Swift's own
-//! `envelopedCredential` throws when `MOICASignedCredential.parse` fails,
-//! which is the only outcome available here since no parser exists yet.
+//! X.509/自然人憑證) envelope, or a TWDIW SD-JWT - never by sniffing the
+//! bytes (that would be the type-confusion bug this file's own Swift test
+//! suite is named after). All three run the shared holder-binding/
+//! freshness/validity orchestration.
 //!
 //! **Revocation checking is out of scope**, tracked separately
-//! (`RevocationSnapshot.swift`'s SMT-proof machinery, tied to the
-//! card-signed path this module does not yet handle). Every verified
-//! result in this module reports `RevocationStatus::NotChecked { reason:
-//! NoCertificateToCheck }`, which is what Swift itself always produces for
-//! a device-signed or SD-JWT credential too - neither carries a
-//! certificate serial number to look up. [`caveat_for_revocation_status`]
-//! is still implemented in full (all three `RevocationStatus` branches),
-//! so the one piece a future card-signed PR needs to add is a serial
-//! number and a snapshot lookup, not this function.
+//! (`RevocationSnapshot.swift`'s SMT-proof machinery). Every verified
+//! result in this module reports `RevocationStatus::NotChecked`, with a
+//! reason distinguishing "neither path carries a certificate to look up"
+//! (device-signed, TWDIW) from "a certificate exists but no revocation
+//! snapshot is wired in yet" (card-signed) - [`caveat_for_revocation_status`]
+//! is implemented in full (all three `RevocationStatus` branches), so the
+//! one piece a future revocation PR needs to add is a serial-number
+//! snapshot lookup, not this function.
 
 use std::collections::BTreeMap;
 
@@ -45,6 +36,9 @@ use crate::credential::{
     CREDENTIALS_V2_CONTEXT,
 };
 use crate::identity::{did_key, jwk_did_key};
+use crate::moica::{
+    IssuerCertificate, IssuerCertificateError, MoicaSignedCredential, MoicaSignedCredentialError,
+};
 use crate::presentation::request::{PresentationCredentialSource, PresentationRequest};
 use crate::presentation::verifiable_presentation::{self as vp, EnvelopedVerifiableCredential};
 use crate::twdiw::credential::{self as twdiw_credential, TwdiwCredentialError};
@@ -146,7 +140,7 @@ pub enum VerificationFailure {
     #[error("credential expired")]
     CredentialExpired,
 
-    // Card-signed credentials - not yet reachable; see module docs.
+    // Card-signed credentials.
     #[error("card signature invalid")]
     CardSignatureInvalid,
     #[error("cardholder is not the subject")]
@@ -404,6 +398,12 @@ fn check(
             }
             check_device_signed(&jws)?
         }
+        RawEnvelopedCredential::CardSigned(serialized) => {
+            if request.credential_source != PresentationCredentialSource::SelfIssued {
+                return Err(VerificationFailure::CredentialSourceMismatch);
+            }
+            check_card_signed(&serialized, now)?
+        }
         RawEnvelopedCredential::GovernmentSdJwt(serialized) => {
             if request.credential_source != PresentationCredentialSource::Twdiw {
                 return Err(VerificationFailure::CredentialSourceMismatch);
@@ -481,10 +481,15 @@ fn check(
     }
 
     // Revocation runs only once signature, holder binding and validity
-    // have all passed. Neither path this module reads carries a
-    // certificate serial number to look up - see module docs.
+    // have all passed. The device-signed and TWDIW paths carry no
+    // certificate serial number to look up at all; the card-signed path
+    // has one (see module docs) but no snapshot lookup is wired in yet.
     let revocation_status = RevocationStatus::NotChecked {
-        reason: NotCheckedReason::NoCertificateToCheck,
+        reason: if credential.certificate_serial_number_hex.is_some() {
+            NotCheckedReason::SnapshotUnavailable
+        } else {
+            NotCheckedReason::NoCertificateToCheck
+        },
     };
     let revocation_caveat = caveat_for_revocation_status(&revocation_status, now)?;
 
@@ -589,6 +594,7 @@ fn require_signature(
 
 enum RawEnvelopedCredential {
     DeviceSigned(String),
+    CardSigned(String),
     GovernmentSdJwt(String),
 }
 
@@ -632,12 +638,16 @@ fn enveloped_credential(
     if let Some(jws) = identifier.strip_prefix(EnvelopedVerifiableCredential::COMPACT_JWS_PREFIX) {
         return Ok(RawEnvelopedCredential::DeviceSigned(jws.to_string()));
     }
-    if identifier.starts_with(EnvelopedVerifiableCredential::MOICA_SIGNED_PREFIX) {
-        // Recognised, not parsed - see this module's docs. Swift itself
-        // throws exactly this failure when MOICASignedCredential.parse
-        // fails, which is the only outcome available with no parser at
-        // all.
-        return Err(VerificationFailure::CredentialUnreadable);
+    if let Some(encoded) =
+        identifier.strip_prefix(EnvelopedVerifiableCredential::MOICA_SIGNED_PREFIX)
+    {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let serialized = STANDARD
+            .decode(encoded)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .ok_or(VerificationFailure::CredentialUnreadable)?;
+        return Ok(RawEnvelopedCredential::CardSigned(serialized));
     }
     if let Some(serialized) = identifier.strip_prefix(EnvelopedVerifiableCredential::SD_JWT_PREFIX)
     {
@@ -666,6 +676,10 @@ struct CheckedCredential {
     withheld_claim_count: i64,
     cardholder_name_was_checked: bool,
     issuer_trust_snapshot: Option<OfflineIssuerTrustSnapshot>,
+    /// The card-signed path's certificate, for a future revocation
+    /// lookup - `None` for the device-signed and TWDIW paths, neither
+    /// of which carries one.
+    certificate_serial_number_hex: Option<String>,
 }
 
 /// The device-signed path: a credential secured by the device's own ES256
@@ -713,6 +727,94 @@ fn check_device_signed(jws: &str) -> Result<CheckedCredential, VerificationFailu
         withheld_claim_count: 0,
         cardholder_name_was_checked: false,
         issuer_trust_snapshot: None,
+        certificate_serial_number_hex: None,
+    })
+}
+
+/// The card-signed path: a national-ID credential secured by the
+/// cardholder's own 自然人憑證 (MOICA) rather than by the device's key.
+/// `MoicaSignedCredential::verify_against` checks the whole chain -
+/// certificate pinning/identity/validity, the card signature over the
+/// credential, and the cardholder-name binding - in one call; this
+/// function's job is only translating that result (and its failure
+/// modes) into the shape every path here shares.
+fn check_card_signed(
+    serialized: &str,
+    now: DateTime<Utc>,
+) -> Result<CheckedCredential, VerificationFailure> {
+    let envelope = MoicaSignedCredential::parse(serialized)
+        .map_err(|_| VerificationFailure::CredentialUnreadable)?;
+    let anchor = IssuerCertificate::load_bundled(now.timestamp())
+        .map_err(|_| VerificationFailure::TrustAnchorUnavailable)?;
+    let verification = envelope
+        .verify_against(&anchor, now.timestamp())
+        .map_err(|error| match error {
+            MoicaSignedCredentialError::CertificateInvalid(
+                IssuerCertificateError::HolderCertificateNotYetValid {
+                    not_before_unix_seconds,
+                },
+            ) => VerificationFailure::DeviceClockPrecedesCertificate {
+                valid_from: not_before_unix_seconds,
+            },
+            MoicaSignedCredentialError::CertificateInvalid(_) => {
+                VerificationFailure::CardholderCertificateUnusable
+            }
+            MoicaSignedCredentialError::SignatureInvalid
+            | MoicaSignedCredentialError::MalformedSignature
+            | MoicaSignedCredentialError::UnsupportedProofConstruction => {
+                VerificationFailure::CardSignatureInvalid
+            }
+            MoicaSignedCredentialError::IssuerSignatureInvalid => {
+                VerificationFailure::CredentialSignatureInvalid
+            }
+            MoicaSignedCredentialError::CardholderNameMissing
+            | MoicaSignedCredentialError::CredentialNameMissing
+            | MoicaSignedCredentialError::CardholderNameDiffersFromSubject => {
+                VerificationFailure::CardholderIsNotTheSubject
+            }
+            MoicaSignedCredentialError::MalformedPayload
+            | MoicaSignedCredentialError::DisclosureNotCommitted => {
+                VerificationFailure::CredentialUnreadable
+            }
+        })?;
+
+    let credential = verification.credential;
+    let subject_id = credential
+        .credential_subject
+        .get("id")
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .ok_or(VerificationFailure::CredentialUnreadable)?;
+
+    let mut subject = serde_json::Map::new();
+    subject.insert("id".to_string(), Value::String(subject_id));
+    for (name, value) in &verification.claims {
+        subject.insert(name.clone(), Value::String(value.clone()));
+    }
+    let payload_value = serde_json::json!({
+        "@context": [CREDENTIALS_V2_CONTEXT],
+        "type": credential.types,
+        "issuer": credential.issuer,
+        "validFrom": credential.valid_from,
+        "credentialSubject": Value::Object(subject),
+    });
+    let payload_object = payload_value
+        .as_object()
+        .cloned()
+        .ok_or(VerificationFailure::CredentialUnreadable)?;
+    let payload_data = serde_json::to_vec(&payload_value)
+        .map_err(|_| VerificationFailure::CredentialUnreadable)?;
+
+    Ok(CheckedCredential {
+        payload: payload_object,
+        payload_data,
+        issuer: credential.issuer,
+        cardholder_name: Some(verification.cardholder_name),
+        claims: verification.claims,
+        withheld_claim_count: verification.withheld_claim_count as i64,
+        cardholder_name_was_checked: verification.cardholder_name_was_checked,
+        issuer_trust_snapshot: None,
+        certificate_serial_number_hex: Some(verification.certificate_serial_number_hex),
     })
 }
 
@@ -792,6 +894,7 @@ fn check_government_sd_jwt(
         withheld_claim_count: withheld,
         cardholder_name_was_checked: false,
         issuer_trust_snapshot: Some(snapshot.clone()),
+        certificate_serial_number_hex: None,
     })
 }
 
@@ -1591,6 +1694,138 @@ mod tests {
         )
         .unwrap();
         let outcome = verify(&device_jws, &twdiw_request, presented_at(), None);
+        assert_eq!(
+            outcome.failure(),
+            Some(&VerificationFailure::CredentialSourceMismatch)
+        );
+    }
+
+    // MARK: - Card-signed path
+    //
+    // A *passing* card-signed presentation needs a certificate MOICA
+    // actually signed, which is a real person's and is not something to
+    // check into a repository (see moica::credential's own test module,
+    // which exercises the full signature/disclosure/name-binding logic
+    // against a throwaway key). What is testable here, at the dispatch
+    // level, is that the wiring is real: a card-signed envelope is
+    // recognised, routed to `check_card_signed`, weighed against the
+    // real bundled trust anchor, and refused for a legible reason when
+    // (as here) the certificate cannot chain to it.
+
+    struct MoicaFixture {
+        device_key: SigningKey,
+        device_did: String,
+        moica_serialized: String,
+        request: PresentationRequest,
+    }
+
+    fn moica_fixture() -> MoicaFixture {
+        use crate::moica::{assemble, to_be_signed};
+        use rsa::pkcs1v15::Pkcs1v15Sign;
+        use rsa::RsaPrivateKey;
+        use sha2::{Digest, Sha256};
+
+        let device_key = SigningKey::random(&mut OsRng);
+        let device_did = did_key::did_from_p256_x963(&x963(&device_key)).unwrap();
+        let credential = national_id(&full_model(), &device_did, issued_at());
+        let (tbs, payload_bytes) = to_be_signed(&credential).unwrap();
+
+        // A throwaway, self-signed key standing in for a cardholder's
+        // 自然人憑證 - it cannot chain to the real bundled MOICA-G3 anchor,
+        // which is the point of these tests.
+        let holder_key = RsaPrivateKey::new(&mut OsRng, 2048).unwrap();
+        let signature = holder_key
+            .sign(
+                Pkcs1v15Sign::new::<Sha256>(),
+                &Sha256::digest(tbs.as_bytes()),
+            )
+            .unwrap();
+        let envelope = assemble(
+            &payload_bytes,
+            base64_std(&[0x30, 0x00]),
+            base64_std(&signature),
+            None,
+            Vec::new(),
+        );
+
+        let request = PresentationRequest::new(
+            "Q0hBTExFTkdFLTAwMDAwMA",
+            "核對自然人憑證卡",
+            issued_at().timestamp(),
+            None,
+            None,
+            PresentationCredentialSource::SelfIssued,
+        )
+        .unwrap();
+
+        MoicaFixture {
+            device_key,
+            device_did,
+            moica_serialized: envelope.serialized().unwrap(),
+            request,
+        }
+    }
+
+    fn moica_presentation(fixture: &MoicaFixture, serialized: &str) -> String {
+        let enveloped = EnvelopedVerifiableCredential::enveloping_moica_signed(serialized);
+        let input = presentation_signing_input(
+            enveloped,
+            &fixture.request,
+            &fixture.device_did,
+            &x963(&fixture.device_key),
+            presented_at(),
+        )
+        .unwrap();
+        let signature = sign_raw(&fixture.device_key, input.as_bytes());
+        assemble_presentation_jws(&input, &signature)
+    }
+
+    fn base64_std(bytes: &[u8]) -> String {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        STANDARD.encode(bytes)
+    }
+
+    #[test]
+    fn a_card_signed_envelope_is_recognised_and_routed_to_the_card_checker() {
+        let fixture = moica_fixture();
+        let jws = moica_presentation(&fixture, &fixture.moica_serialized);
+        let outcome = verify(&jws, &fixture.request, presented_at(), None);
+        // Not `CredentialUnreadable`/`CredentialNotEnveloped` (which is
+        // what an unrecognised or mis-dispatched envelope would produce)
+        // and not `TrustAnchorUnavailable` (the real bundled anchor
+        // loads fine) - specifically the card-checker's own verdict on
+        // an unchained certificate.
+        assert_eq!(
+            outcome.failure(),
+            Some(&VerificationFailure::CardholderCertificateUnusable)
+        );
+    }
+
+    #[test]
+    fn a_malformed_card_signed_envelope_is_unreadable_not_a_crash() {
+        let fixture = moica_fixture();
+        let jws = moica_presentation(&fixture, "not a moica envelope");
+        let outcome = verify(&jws, &fixture.request, presented_at(), None);
+        assert_eq!(
+            outcome.failure(),
+            Some(&VerificationFailure::CredentialUnreadable)
+        );
+    }
+
+    #[test]
+    fn a_card_signed_presentation_still_requires_self_issued_source() {
+        let fixture = moica_fixture();
+        let jws = moica_presentation(&fixture, &fixture.moica_serialized);
+        let twdiw_request = PresentationRequest::new(
+            &fixture.request.challenge,
+            &fixture.request.purpose,
+            issued_at().timestamp(),
+            None,
+            None,
+            PresentationCredentialSource::Twdiw,
+        )
+        .unwrap();
+        let outcome = verify(&jws, &twdiw_request, presented_at(), None);
         assert_eq!(
             outcome.failure(),
             Some(&VerificationFailure::CredentialSourceMismatch)
