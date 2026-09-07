@@ -62,14 +62,16 @@ pub enum PresentationCredentialSource {
 }
 
 impl PresentationCredentialSource {
-    fn wire_code(self) -> &'static str {
+    /// `pub(crate)`: also used by `age_predicate_proof`, whose package/
+    /// request wire formats reuse the same "s"/"g" codes.
+    pub(crate) fn wire_code(self) -> &'static str {
         match self {
             Self::SelfIssued => "s",
             Self::Twdiw => "g",
         }
     }
 
-    fn from_wire_code(code: &str) -> Option<Self> {
+    pub(crate) fn from_wire_code(code: &str) -> Option<Self> {
         match code {
             "s" => Some(Self::SelfIssued),
             "g" => Some(Self::Twdiw),
@@ -285,12 +287,14 @@ impl PresentationRequest {
     }
 }
 
-fn base64_url_encode(bytes: &[u8]) -> String {
+/// `pub(crate)`: also used by `age_predicate_proof` for its own nonce/
+/// service-id encoding.
+pub(crate) fn base64_url_encode(bytes: &[u8]) -> String {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn uuid_v4_string(mut bytes: [u8; 16]) -> String {
+pub(crate) fn uuid_v4_string(mut bytes: [u8; 16]) -> String {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     format!(
@@ -314,7 +318,7 @@ fn uuid_v4_string(mut bytes: [u8; 16]) -> String {
     )
 }
 
-fn is_valid_uuid(text: &str) -> bool {
+pub(crate) fn is_valid_uuid(text: &str) -> bool {
     let bytes = text.as_bytes();
     if bytes.len() != 36 {
         return false;

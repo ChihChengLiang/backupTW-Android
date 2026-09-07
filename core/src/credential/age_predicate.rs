@@ -131,6 +131,14 @@ pub fn reached(age: i32, born: NaiveDate, as_of: DateTime<Utc>) -> bool {
     }
 }
 
+/// The Gregorian civil date `minimum_age` years before `as_of`'s Taipei
+/// civil date — the boundary an age-predicate proof's cutoff represents
+/// ("born on or before this date" is the statement being proved). `None`
+/// when no such calendar date exists (an absurdly large `minimum_age`).
+pub fn cutoff_date(minimum_age: i32, as_of: DateTime<Utc>) -> Option<NaiveDate> {
+    add_years(taipei_date(as_of), -minimum_age)
+}
+
 /// Adds `years` to `date`, clamping a 29 February birthday to 28 February in
 /// a non-leap target year — matching `Calendar.date(byAdding:.year...)`,
 /// and the conventional reading of 民法 §124 (age counted from the day of
@@ -252,5 +260,18 @@ mod tests {
         for raw in [None, Some(""), Some("0700101"), Some("not a date")] {
             assert_eq!(claim_value(raw, now), None, "{raw:?}");
         }
+    }
+
+    #[test]
+    fn cutoff_date_is_minimum_age_years_before_todays_taipei_date() {
+        let now = taipei(2026, 9, 1);
+        assert_eq!(cutoff_date(18, now), Some(taipei_civil_date(2008, 9, 1)));
+        assert_eq!(cutoff_date(1, now), Some(taipei_civil_date(2025, 9, 1)));
+    }
+
+    #[test]
+    fn cutoff_date_clamps_a_leap_day_boundary() {
+        let now = taipei(2018, 2, 28);
+        assert_eq!(cutoff_date(18, now), Some(taipei_civil_date(2000, 2, 28)));
     }
 }
