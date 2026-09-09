@@ -20,6 +20,10 @@ use p256::ecdsa::SigningKey;
 use p256::elliptic_curve::rand_core::OsRng;
 
 use crate::identity::{did_key, jwk_did_key};
+use crate::presentation::age_predicate_proof::{
+    self as age_predicate_proof, AgePredicateProofError, AgePredicateProofPackage,
+    AgePredicateProofRequest,
+};
 use crate::presentation::offline_verifier::{
     self as offline_verifier, DisclosedClaim, OfflineIssuerTrustSnapshot, RevocationStatus,
     VerificationCaveat, VerificationFailure,
@@ -793,6 +797,125 @@ pub fn verify_offline_presentation(
     }
 }
 
+// MARK: - Age-predicate ZK proof request/package
+//
+// Prepare, Show, reblind and verify are native Mopro FFI calls this crate
+// never makes - see age_predicate_proof's own module doc. This exposes the
+// pure data/decision layer around that call: building the verifier's
+// request, and assembling/validating the package a holder answers with
+// once native proving has run.
+
+/// Mints a fresh age-predicate proof request. `now_unix_seconds`: this
+/// verifier's clock, Unix seconds.
+#[uniffi::export]
+pub fn generate_age_predicate_proof_request(
+    purpose: String,
+    credential_source: PresentationCredentialSource,
+    minimum_age: i32,
+    response_url: Option<String>,
+    now_unix_seconds: i64,
+) -> Result<AgePredicateProofRequest, AgePredicateProofError> {
+    let now = Utc
+        .timestamp_opt(now_unix_seconds, 0)
+        .single()
+        .ok_or(AgePredicateProofError::MalformedRequest)?;
+    AgePredicateProofRequest::new(
+        &purpose,
+        credential_source,
+        minimum_age,
+        response_url.as_deref(),
+        now,
+    )
+}
+
+/// The circuit literal for `claim_format`'s declared normalization -
+/// `claim_format` comes from Mopro's own `createAgePrepareInput`, which
+/// parses the SD-JWT natively; this function does not derive it.
+#[uniffi::export]
+pub fn age_predicate_proof_request_cutoff_value(
+    request: AgePredicateProofRequest,
+    claim_format: u8,
+) -> Result<u64, AgePredicateProofError> {
+    request.cutoff_value(claim_format)
+}
+
+/// Assembles and validates the package a holder answers a request with,
+/// from Mopro's own proving output (`claim_name`/`claim_format` as
+/// `createAgePrepareInput` returned them, `prepare_proof`/`show_proof` as
+/// `prove_jwt`/`prove_show` wrote them). `created_at_unix_millis`: this
+/// holder's clock, Unix milliseconds.
+#[uniffi::export]
+#[allow(clippy::too_many_arguments)]
+pub fn assemble_age_predicate_proof_package(
+    request: AgePredicateProofRequest,
+    claim_name: String,
+    claim_format: u8,
+    issuer_did: String,
+    prepare_proof: Vec<u8>,
+    show_proof: Vec<u8>,
+    prepare_milliseconds: u64,
+    show_milliseconds: u64,
+    created_at_unix_millis: i64,
+) -> Result<AgePredicateProofPackage, AgePredicateProofError> {
+    AgePredicateProofPackage::new(
+        &request,
+        &claim_name,
+        claim_format,
+        &issuer_did,
+        prepare_proof,
+        show_proof,
+        prepare_milliseconds,
+        show_milliseconds,
+        created_at_unix_millis,
+    )
+}
+
+/// The exact bytes to transport (POST body, BLE payload).
+#[uniffi::export]
+pub fn encode_age_predicate_proof_package(package: AgePredicateProofPackage) -> Vec<u8> {
+    package.encoded()
+}
+
+/// Reads a package a holder (or a relay) handed back.
+#[uniffi::export]
+pub fn decode_age_predicate_proof_package(
+    bytes: Vec<u8>,
+) -> Result<AgePredicateProofPackage, AgePredicateProofError> {
+    AgePredicateProofPackage::decoded(&bytes)
+}
+
+/// A stable, non-reversible key for the credential a prepared Mopro state
+/// belongs to - see `age_predicate_proof::prepare_cache_key`.
+#[uniffi::export]
+pub fn age_predicate_prepare_cache_key(
+    source: PresentationCredentialSource,
+    stored_credential: String,
+) -> String {
+    age_predicate_proof::prepare_cache_key(source, &stored_credential)
+}
+
+/// One prepare-cache entry: its key and when it was last used. A small
+/// mirror record - see this module's doc comment - since a tuple has no
+/// UniFFI representation.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiPrepareCacheEntry {
+    pub key: String,
+    pub last_used_at_unix_seconds: i64,
+}
+
+/// Which cache keys a native prepare-cache should evict to stay within
+/// [`age_predicate_proof::MAXIMUM_PREPARE_CACHE_ENTRIES`].
+#[uniffi::export]
+pub fn age_predicate_prepare_cache_keys_to_evict(
+    entries: Vec<FfiPrepareCacheEntry>,
+) -> Vec<String> {
+    let entries: Vec<(String, i64)> = entries
+        .into_iter()
+        .map(|e| (e.key, e.last_used_at_unix_seconds))
+        .collect();
+    age_predicate_proof::prepare_cache_keys_to_evict(&entries)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1399,5 +1522,105 @@ mod tests {
             verify_offline_presentation(jws, other_request, PRESENTED_AT, None),
             Err(VerificationFailure::ChallengeMismatch)
         );
+    }
+
+    // MARK: - Age-predicate ZK proof
+
+    #[test]
+    fn age_predicate_proof_request_generates_and_reports_a_cutoff_value() {
+        let request = generate_age_predicate_proof_request(
+            "超商確認已滿 18 歲".to_string(),
+            PresentationCredentialSource::Twdiw,
+            18,
+            None,
+            PRESENTED_AT,
+        )
+        .unwrap();
+        // Gregorian (format 2) and ROC-year (format 3) encodings of the
+        // same cutoff date.
+        let gregorian = age_predicate_proof_request_cutoff_value(request.clone(), 2).unwrap();
+        let roc = age_predicate_proof_request_cutoff_value(request, 3).unwrap();
+        assert_ne!(gregorian, roc);
+    }
+
+    #[test]
+    fn age_predicate_proof_package_round_trips_through_assemble_encode_decode() {
+        let request = generate_age_predicate_proof_request(
+            "確認年齡".to_string(),
+            PresentationCredentialSource::SelfIssued,
+            18,
+            None,
+            PRESENTED_AT,
+        )
+        .unwrap();
+        let package = assemble_age_predicate_proof_package(
+            request,
+            "birthdate".to_string(),
+            2,
+            "did:key:zIssuer".to_string(),
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+            1_200,
+            700,
+            PRESENTED_AT * 1000,
+        )
+        .unwrap();
+        let decoded =
+            decode_age_predicate_proof_package(encode_age_predicate_proof_package(package.clone()))
+                .unwrap();
+        assert_eq!(decoded, package);
+    }
+
+    #[test]
+    fn assemble_age_predicate_proof_package_rejects_an_unsupported_claim_name() {
+        let request = generate_age_predicate_proof_request(
+            "確認年齡".to_string(),
+            PresentationCredentialSource::SelfIssued,
+            18,
+            None,
+            PRESENTED_AT,
+        )
+        .unwrap();
+        assert_eq!(
+            assemble_age_predicate_proof_package(
+                request,
+                "membership_started_at".to_string(),
+                2,
+                "did:key:zIssuer".to_string(),
+                vec![1],
+                vec![2],
+                1,
+                1,
+                PRESENTED_AT * 1000,
+            ),
+            Err(AgePredicateProofError::StatementMismatch)
+        );
+    }
+
+    #[test]
+    fn age_predicate_prepare_cache_key_via_ffi_is_stable_and_hides_content() {
+        let a = age_predicate_prepare_cache_key(
+            PresentationCredentialSource::SelfIssued,
+            "eyJ...national-id...~disclosure~".to_string(),
+        );
+        let b = age_predicate_prepare_cache_key(
+            PresentationCredentialSource::SelfIssued,
+            "eyJ...national-id...~disclosure~".to_string(),
+        );
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 64);
+    }
+
+    #[test]
+    fn age_predicate_prepare_cache_keys_to_evict_via_ffi_keeps_the_limit() {
+        let entries: Vec<FfiPrepareCacheEntry> = (0..=8)
+            .map(|i| FfiPrepareCacheEntry {
+                key: format!("{i:064x}"),
+                last_used_at_unix_seconds: i,
+            })
+            .collect();
+        let evicted = age_predicate_prepare_cache_keys_to_evict(entries);
+        assert_eq!(evicted.len(), 1);
+        assert_eq!(evicted[0], format!("{:064x}", 0));
     }
 }
