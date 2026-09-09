@@ -1,0 +1,26 @@
+backupTW-Android
+Copyright 2026 backupTW-Android contributors
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+This is a Rust + Android rewrite of backupTW-iOS, treating its Swift
+implementation and XCTest suite as the behavioral spec this port's
+protocol/business logic is built against (not code copied verbatim,
+but heavily informed by it — including, in places, the reasoning
+recorded in its own source comments). backupTW-iOS is itself licensed
+Apache License 2.0:
+
+  - bonds-tw/backupTW-iOS
+    https://github.com/bonds-tw/backupTW-iOS
+
+Bundled certificates (core/assets/*.cer):
+
+  - MOICA-G3.cer and GRCA-G3.cer are public CA certificates published by the
+    Ministry of the Interior Certificate Authority (moica.nat.gov.tw) and the
+    Government Root Certification Authority (grca.nat.gov.tw). Their SHA-256
+    fingerprints are pinned and checked at load time in
+    core/src/moica/issuer_certificate.rs.
+
+Third-party crates (Rust, see core/Cargo.lock) and Gradle dependencies
+(Kotlin/Java, see android/*/build.gradle.kts) keep their own licenses,
+unchanged by inclusion here.
