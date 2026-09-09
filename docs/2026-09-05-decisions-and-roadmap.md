@@ -28,8 +28,16 @@ Source repo facts (see `backupTW-iOS/docs/roadmap-2026-08-27.md`,
   (`backupTW-iOS/Native/OpenACAge/`, `Native/OpenACAgePackage/`).
 - No NFC anywhere in the app (confirmed by grep; the official Android
   MOICA holder SDK has NFC, this app deliberately skips it).
-- ZK proving keys are ~950MB, downloaded at runtime, excluded from
-  backup — needs an Android storage-management equivalent.
+- ZK proving: the circuit backend is Spartan2, transparent-setup (no
+  Powers-of-Tau ceremony, confirmed 2026-09-07 — see
+  `docs/2026-09-05-spartan2-zk-property-unverified.md`). The ~950MB
+  figure this line originally cited (downloaded proving keys) was a
+  stale carry-over from a different assumption about the backend —
+  circuit assets are compiled `.r1cs` files staged on-device and
+  proving/verifying keys are generated from them locally, not
+  downloaded. Real device deployment still needs an Android storage-
+  management equivalent for those `.r1cs` files (~380MB); see
+  tracked issue #42.
 
 ## Decisions made
 
@@ -73,16 +81,23 @@ found and fixed.
 
 ## Open questions (unresolved as of this writing)
 
-- **MOICA on Android — partially resolved 2026-09-05.** An official
-  Android app exists (`tw.gov.moi.tfido` on Google Play, Android 12+)
-  and documents App-to-App, QR-code, and push as its three integrator
-  transports — the SP REST backend is platform-agnostic. Decision:
-  build **QR-code mode first** for Android (zero OS-specific
-  integration risk, reuses the same SP API path already proven on
-  iOS); spike the App-to-App intent contract in parallel since its
-  exact mechanics aren't public and require MOI's integrator docs.
-  Expect this integration to be difficult regardless of transport —
-  see `docs/2026-09-05-moica-integration-plan.md` for detail.
+- **MOICA on Android — partially resolved 2026-09-05, core protocol
+  landed 2026-09-07.** An official Android app exists
+  (`tw.gov.moi.tfido` on Google Play, Android 12+) and documents
+  App-to-App, QR-code, and push as its three integrator transports —
+  the SP REST backend is platform-agnostic. Decision: build
+  **QR-code mode first** for Android (zero OS-specific integration
+  risk, reuses the same SP API path already proven on iOS); spike the
+  App-to-App intent contract in parallel since its exact mechanics
+  aren't public and require MOI's integrator docs. Expect this
+  integration to be difficult regardless of transport — see
+  `docs/2026-09-05-moica-integration-plan.md` for detail. The
+  `MOICASignedCredential` envelope/verification chain and the TW FidO
+  SP API's checksum/ticket/polling protocol are both ported to
+  `core/` and merged (X.509/RSA chain, request/response shapes) —
+  what's still missing is Android-side networking, QR generation, and
+  UI, and live end-to-end testing (blocked on the project owner's SP
+  credentials — see tracked issues #34/#35).
 - Exact Android `minSdk`/target SDK, package name, and module layout
   within `android/` — deferred to Phase 0 execution.
 - Whether/when iOS adopts the shared Rust core — explicitly deferred,
