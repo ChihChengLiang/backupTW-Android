@@ -292,6 +292,9 @@ open.
    let it go unstarted for long.
 7. Phase 2 (the shared Rust core) started, same session: `core/`
    now exists with `did:key` (both spellings) and the credential
-   model/SD-JWT/age-predicate modules, 87 tests passing. Tracked
-   separately from here on — see
-   `docs/2026-09-05-phase2-core-progress.md`.
+   model/SD-JWT/age-predicate modules, 87 tests passing. Progress
+   from here on is tracked via merged PRs and `core/`'s own module
+   docs, not a separate snapshot file — the doc that used to live
+   here (`2026-09-05-phase2-core-progress.md`) was a point-in-time
+   status page that fell out of date as the crate grew far past it
+   and was removed 2026-09-09.
