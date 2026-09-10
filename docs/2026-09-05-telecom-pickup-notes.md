@@ -1,5 +1,10 @@
 # Telecom credential convenience-store pickup — field notes (2026-09-05)
 
+Protocol design and security posture, written before this flow was
+built. For a trace through the actual implementation - what's in each
+request, what crosses the network vs. stays on-device - see
+`docs/2026-09-10-seven-eleven-pickup-data-flow.md`.
+
 Summarized from an external field report on the 7-Eleven convenience-
 store pickup feature, shared by the iOS developer. Original:
 [pro.mashbean.net/reports/2026-09-02-telecom-credential-convenience-store-pickup](https://pro.mashbean.net/reports/2026-09-02-telecom-credential-convenience-store-pickup/),
