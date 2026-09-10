@@ -43,7 +43,7 @@ private const val CATALOG_URL =
  * browser/app and this process may not survive the trip.
  */
 @Composable
-fun ApplyForCardScreen(pendingOfferLink: String?, onOfferConsumed: () -> Unit, onBack: () -> Unit) {
+fun ApplyForCardScreen(pendingOfferLink: String?, onOfferConsumed: () -> Unit) {
     val context = LocalContext.current
     val credentialStore = remember { CredentialStore(context) }
 
@@ -92,7 +92,6 @@ fun ApplyForCardScreen(pendingOfferLink: String?, onOfferConsumed: () -> Unit, o
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Apply for a telecom card", style = MaterialTheme.typography.headlineSmall)
-        Button(onClick = onBack) { Text("Back") }
 
         pending?.let {
             Text(

@@ -61,7 +61,7 @@ private const val TRUST_LIST_URL = "https://frontend.wallet.gov.tw/api/did?size=
  * debugging but off [HomeScreen]'s primary buttons.
  */
 @Composable
-fun DeveloperToolsScreen(onNavigate: (Screen) -> Unit, onBack: () -> Unit) {
+fun DeveloperToolsScreen(onOpenFixtureDemo: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val credentialStore = remember { CredentialStore(context) }
 
@@ -72,7 +72,7 @@ fun DeveloperToolsScreen(onNavigate: (Screen) -> Unit, onBack: () -> Unit) {
         Text("Developer tools", style = MaterialTheme.typography.headlineSmall)
         Button(onClick = onBack) { Text("Back") }
 
-        Button(onClick = { onNavigate(Screen.FixtureDemo) }) { Text("Fixture demo (no network)") }
+        Button(onClick = onOpenFixtureDemo) { Text("Fixture demo (no network)") }
 
         HorizontalDivider()
         Text("Infrastructure smoke tests", style = MaterialTheme.typography.titleMedium)

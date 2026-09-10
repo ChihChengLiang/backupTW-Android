@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -70,7 +69,7 @@ private val CARD_HEIGHT = 172.dp
 private val CARD_PEEK = 64.dp
 
 @Composable
-fun HomeScreen(onNavigate: (Screen) -> Unit) {
+fun HomeScreen(onOpenDeveloperTools: () -> Unit) {
     val context = LocalContext.current
     val credentialStore = remember { CredentialStore(context) }
     val storedIds by remember { mutableStateOf(credentialStore.allIds()) }
@@ -93,20 +92,14 @@ fun HomeScreen(onNavigate: (Screen) -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (orderedIds.isEmpty()) {
-                Text("None yet - apply for a card below.", style = MaterialTheme.typography.bodyMedium)
+                Text("None yet - use the Add tab to apply for a card.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 CredentialCardStack(orderedIds)
             }
         }
 
         HorizontalDivider()
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { onNavigate(Screen.ApplyForCard) }) { Text("Apply for a telecom card") }
-            Button(onClick = { onNavigate(Screen.PickupCatalog) }) { Text("7-Eleven package pickup") }
-        }
-
-        HorizontalDivider()
-        TextButton(onClick = { onNavigate(Screen.DeveloperTools) }) { Text("Developer tools") }
+        TextButton(onClick = onOpenDeveloperTools) { Text("Developer tools") }
     }
 }
 

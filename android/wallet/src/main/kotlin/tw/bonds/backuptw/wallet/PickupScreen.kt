@@ -2,10 +2,8 @@ package tw.bonds.backuptw.wallet
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -66,7 +64,7 @@ private sealed interface PickupStage {
  * disclosure text is the informed-consent step this build has.
  */
 @Composable
-fun PickupScreen(onBack: () -> Unit) {
+fun PickupScreen() {
     val context = LocalContext.current
     val credentialStore = remember { CredentialStore(context) }
 
@@ -77,7 +75,7 @@ fun PickupScreen(onBack: () -> Unit) {
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        PickupHeader(onBack)
+        Text("7-Eleven package pickup", style = MaterialTheme.typography.headlineSmall)
 
         when (val current = stage) {
             PickupStage.LoadingCatalog -> ProgressStage("Loading the live catalog…") {
@@ -183,19 +181,6 @@ fun PickupScreen(onBack: () -> Unit) {
         if (statusLines.isNotEmpty()) {
             TechnicalLog(statusLines)
         }
-    }
-}
-
-@Composable
-private fun PickupHeader(onBack: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            "←",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.clickable(onClick = onBack).padding(4.dp),
-        )
-        Text("7-Eleven package pickup", style = MaterialTheme.typography.headlineSmall)
     }
 }
 

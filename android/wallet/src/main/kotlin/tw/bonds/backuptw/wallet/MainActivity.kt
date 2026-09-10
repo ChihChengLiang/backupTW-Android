@@ -5,10 +5,15 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +23,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 
 /**
@@ -61,17 +72,23 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-sealed interface Screen {
-    data object Home : Screen
-    data object FixtureDemo : Screen
-    data object ApplyForCard : Screen
-    data object PickupCatalog : Screen
-    data object DeveloperTools : Screen
+/** The three bottom-nav destinations - one per real feature this app has (see the session's design discussion for why Scan/Personal aren't tabs yet: no feature exists behind either). */
+enum class NavTab(val label: String) {
+    Credentials("Credentials"),
+    Add("Add"),
+    Present("Present"),
+}
+
+/** Screens reached from within a tab, layered above it without their own nav-bar entry - not part of the tab set, so the bottom bar hides while one is open. */
+private sealed interface Overlay {
+    data object DeveloperTools : Overlay
+    data object FixtureDemo : Overlay
 }
 
 @Composable
 fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
-    var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var currentTab by remember { mutableStateOf(NavTab.Credentials) }
+    var overlay by remember { mutableStateOf<Overlay?>(null) }
     var pendingOfferLink by remember { mutableStateOf<String?>(null) }
     var deepLinkNotice by remember { mutableStateOf<String?>(null) }
 
@@ -79,17 +96,18 @@ fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
         if (deepLink != null) {
             when (deepLink.host) {
                 // The carrier's app hands this back once phone verification
-                // is done - route straight into the screen that started it,
+                // is done - route straight into the tab that started it,
                 // which reads back which application it answers.
                 "credential_offer" -> {
                     pendingOfferLink = deepLink.toString()
-                    screen = Screen.ApplyForCard
+                    overlay = null
+                    currentTab = NavTab.Add
                 }
                 // A verifier's own QR/NFC `authorize` link, scanned in
                 // person - distinct from PickupScreen's flow, which starts
                 // from the catalog and gets its own deep link in-process
                 // from the transaction-start reply. Not implemented: this
-                // build's pickup entry point is the Home screen button.
+                // build's pickup entry point is the Present tab.
                 "authorize" -> deepLinkNotice = "Received a pickup/authorize link (not yet handled):\n$deepLink"
                 else -> deepLinkNotice = "Received an unrecognised link: $deepLink"
             }
@@ -97,29 +115,90 @@ fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        deepLinkNotice?.let {
-            Text(
-                it,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.bodySmall,
-            )
+    Scaffold(
+        bottomBar = {
+            if (overlay == null) {
+                NavigationBar {
+                    NavTab.entries.forEach { tab ->
+                        NavigationBarItem(
+                            selected = currentTab == tab,
+                            onClick = { currentTab = tab },
+                            icon = { NavTabIcon(tab, selected = currentTab == tab) },
+                            label = { Text(tab.label) },
+                        )
+                    }
+                }
+            }
+        },
+    ) { innerPadding ->
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            deepLinkNotice?.let {
+                Text(
+                    it,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            when (overlay) {
+                Overlay.DeveloperTools ->
+                    DeveloperToolsScreen(
+                        onOpenFixtureDemo = { overlay = Overlay.FixtureDemo },
+                        onBack = { overlay = null },
+                    )
+                Overlay.FixtureDemo -> FixtureDemoScreen(onBack = { overlay = null })
+                null ->
+                    when (currentTab) {
+                        NavTab.Credentials -> HomeScreen(onOpenDeveloperTools = { overlay = Overlay.DeveloperTools })
+                        NavTab.Add ->
+                            ApplyForCardScreen(
+                                pendingOfferLink = pendingOfferLink,
+                                onOfferConsumed = { pendingOfferLink = null },
+                            )
+                        NavTab.Present -> PickupScreen()
+                    }
+            }
         }
-        when (screen) {
-            Screen.Home -> HomeScreen(onNavigate = { screen = it })
-            Screen.FixtureDemo -> FixtureDemoScreen(onBack = { screen = Screen.Home })
-            Screen.ApplyForCard ->
-                ApplyForCardScreen(
-                    pendingOfferLink = pendingOfferLink,
-                    onOfferConsumed = { pendingOfferLink = null },
-                    onBack = { screen = Screen.Home },
+    }
+}
+
+@Composable
+private fun NavTabIcon(tab: NavTab, selected: Boolean) {
+    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val stroke = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+        when (tab) {
+            NavTab.Credentials -> {
+                val inset = size.width * 0.08f
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(inset, size.height * 0.2f),
+                    size = Size(size.width - inset * 2, size.height * 0.6f),
+                    cornerRadius = CornerRadius(size.width * 0.12f),
+                    style = stroke,
                 )
-            Screen.PickupCatalog -> PickupScreen(onBack = { screen = Screen.Home })
-            Screen.DeveloperTools ->
-                DeveloperToolsScreen(
-                    onNavigate = { screen = it },
-                    onBack = { screen = Screen.Home },
-                )
+            }
+            NavTab.Add -> {
+                val mid = size.width / 2f
+                val midY = size.height / 2f
+                val half = size.width * 0.38f
+                drawLine(color, Offset(mid - half, midY), Offset(mid + half, midY), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(color, Offset(mid, midY - half), Offset(mid, midY + half), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            // A share/present arrow (out of a corner bracket) - deliberately
+            // not the official app's QR-grid glyph for this tab, matching
+            // this session's general "don't look too close to a reference
+            // design" rule.
+            NavTab.Present -> {
+                val path =
+                    Path().apply {
+                        moveTo(size.width * 0.22f, size.height * 0.78f)
+                        lineTo(size.width * 0.78f, size.height * 0.22f)
+                        moveTo(size.width * 0.4f, size.height * 0.22f)
+                        lineTo(size.width * 0.78f, size.height * 0.22f)
+                        lineTo(size.width * 0.78f, size.height * 0.6f)
+                    }
+                drawPath(path, color = color, style = stroke)
+            }
         }
     }
 }
