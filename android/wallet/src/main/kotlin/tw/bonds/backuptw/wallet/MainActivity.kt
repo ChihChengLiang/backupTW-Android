@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         pendingDeepLink = intent?.data
         setContent {
-            MaterialTheme {
+            BackupTWTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     WalletApp(
                         deepLink = pendingDeepLink,
