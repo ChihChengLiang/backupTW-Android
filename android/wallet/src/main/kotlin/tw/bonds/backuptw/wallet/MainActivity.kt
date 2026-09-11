@@ -83,6 +83,7 @@ enum class NavTab(val label: String) {
 private sealed interface Overlay {
     data object DeveloperTools : Overlay
     data object FixtureDemo : Overlay
+    data class CredentialHistory(val credentialId: String) : Overlay
 }
 
 @Composable
@@ -139,16 +140,22 @@ fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            when (overlay) {
+            when (val current = overlay) {
                 Overlay.DeveloperTools ->
                     DeveloperToolsScreen(
                         onOpenFixtureDemo = { overlay = Overlay.FixtureDemo },
                         onBack = { overlay = null },
                     )
                 Overlay.FixtureDemo -> FixtureDemoScreen(onBack = { overlay = null })
+                is Overlay.CredentialHistory ->
+                    CredentialHistoryScreen(credentialId = current.credentialId, onBack = { overlay = null })
                 null ->
                     when (currentTab) {
-                        NavTab.Credentials -> HomeScreen(onOpenDeveloperTools = { overlay = Overlay.DeveloperTools })
+                        NavTab.Credentials ->
+                            HomeScreen(
+                                onOpenDeveloperTools = { overlay = Overlay.DeveloperTools },
+                                onOpenCredential = { overlay = Overlay.CredentialHistory(it) },
+                            )
                         NavTab.Add ->
                             ApplyForCardScreen(
                                 pendingOfferLink = pendingOfferLink,

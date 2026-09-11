@@ -180,9 +180,13 @@ object PickupClient {
             }
         }
 
+    /** Exactly the claims [matchAndDisclose] ever selects - see its own `chosenClaims`. Shown on the consent screen and recorded in [CredentialHistoryEvent.Authorized]. */
+    const val DISCLOSED_FIELDS_LABEL = "Name, last 5 digits of phone number"
+
     suspend fun presentAndGenerate(
         context: PickupContext,
         credentialStore: CredentialStore,
+        credentialHistoryStore: CredentialHistoryStore,
         onStatus: (String) -> Unit,
     ): Result<PickupBarcodeSession> =
         withContext(Dispatchers.IO) {
@@ -212,6 +216,17 @@ object PickupClient {
                         ),
                     )
                 TwdiwClient.postFormEncoded(context.request.responseUri, body)
+
+                credentialHistoryStore.append(
+                    credentialId,
+                    CredentialHistoryEvent.Authorized(
+                        timestampUnixMillis = System.currentTimeMillis(),
+                        organisationName = context.trustEvidence.organisationName,
+                        purpose = context.scenario.name,
+                        vcNo = credentialSerial(credential.credentialId ?: credentialId),
+                        disclosedFieldsLabel = DISCLOSED_FIELDS_LABEL,
+                    ),
+                )
 
                 val holderDid = walletIdentityFromPublicKey(holderKey.publicKeyX963()).jwkDid
                 val receipt = PickupReceipt(holderDid, alias)
