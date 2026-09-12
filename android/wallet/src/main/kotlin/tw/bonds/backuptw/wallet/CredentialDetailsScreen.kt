@@ -151,9 +151,9 @@ private fun ClaimRow(label: String, value: String) {
     }
 }
 
-/** A hand-drawn reveal/hide toggle - no icon library dependency in this module. */
+/** A hand-drawn reveal/hide toggle - no icon library dependency in this module. Also reused by `PickupScreen`'s consent screen (one global toggle there, vs. one per field here). */
 @Composable
-private fun EyeToggle(revealed: Boolean, onClick: () -> Unit) {
+fun EyeToggle(revealed: Boolean, onClick: () -> Unit) {
     val color = MaterialTheme.colorScheme.onSurfaceVariant
     Canvas(modifier = Modifier.size(22.dp).clickable(onClick = onClick)) {
         val stroke = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)

@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -232,65 +233,98 @@ private fun TechnicalLog(statusLines: List<String>) {
     }
 }
 
+private const val CONSENT_MASKED_VALUE = "••••••"
+
 @Composable
 private fun ConsentSection(context: PickupContext, preview: PickupDisclosurePreview, onConfirm: () -> Unit) {
     var showTrustDetails by remember { mutableStateOf(false) }
+    var revealed by remember { mutableStateOf(false) }
 
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(
+            "Data will be shared with ${context.trustEvidence.organisationName}",
+            style = MaterialTheme.typography.titleMedium,
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Provided Data",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                EyeToggle(revealed = revealed, onClick = { revealed = !revealed })
+            }
+            ConsentFieldCard(
+                label = "Name",
+                value = if (revealed) preview.holderName else CONSENT_MASKED_VALUE,
+                credentialName = preview.credentialName,
+                vcNo = preview.credentialSerial,
+            )
+            ConsentFieldCard(
+                label = "Last 5 digits of phone number",
+                value = if (revealed) preview.phoneLastFive else CONSENT_MASKED_VALUE,
+                credentialName = preview.credentialName,
+                vcNo = preview.credentialSerial,
+            )
+        }
+
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                TextButton(onClick = { showTrustDetails = !showTrustDetails }) {
+                    Text(
+                        if (showTrustDetails) "Hide service trust details ▴" else "Show service trust details ▾",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (showTrustDetails) {
+                    Text(
+                        "Trust-list API: ${context.trustEvidence.organisationName}\n" +
+                            "Arbitrum block: ${context.trustEvidence.blockNumber}\n" +
+                            "Transaction: ${context.trustEvidence.transactionHash}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                HorizontalDivider()
+
+                Text(
+                    "By tapping \"Create barcode\", you agree to provide the name and phone-number " +
+                        "digits above to 7-ELEVEN for this parcel pickup check.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) { Text("Create barcode") }
+            }
+        }
+    }
+}
+
+/** One disclosed field, matching the official app's consent screen - no "Update" link (nothing to update to; `PickupClient.matchAndDisclose` always auto-selects the one matching stored credential). */
+@Composable
+private fun ConsentFieldCard(label: String, value: String, credentialName: String, vcNo: String?) {
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    "DATA BEING PROVIDED",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(preview.holderName, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Last 5 digits of phone number: ${preview.phoneLastFive}",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-
-            HorizontalDivider()
-
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    "FROM CREDENTIAL",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text("${preview.credentialName} · ${preview.issuerName}", style = MaterialTheme.typography.bodySmall)
-            }
-
-            TextButton(onClick = { showTrustDetails = !showTrustDetails }) {
-                Text(
-                    if (showTrustDetails) "Hide service trust details ▴" else "Show service trust details ▾",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            if (showTrustDetails) {
-                Text(
-                    "Trust-list API: ${context.trustEvidence.organisationName}\n" +
-                        "Arbitrum block: ${context.trustEvidence.blockNumber}\n" +
-                        "Transaction: ${context.trustEvidence.transactionHash}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            HorizontalDivider()
-
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.bodyMedium)
             Text(
-                "By tapping \"Create barcode\", you agree to provide the name and phone-number " +
-                    "digits above to 7-ELEVEN for this parcel pickup check.",
+                credentialName + (vcNo?.let { "、$it" } ?: ""),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) { Text("Create barcode") }
         }
     }
 }
