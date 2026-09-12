@@ -46,6 +46,7 @@ private const val CATALOG_URL =
 fun ApplyForCardScreen(pendingOfferLink: String?, onOfferConsumed: () -> Unit) {
     val context = LocalContext.current
     val credentialStore = remember { CredentialStore(context) }
+    val credentialHistoryStore = remember { CredentialHistoryStore(context) }
 
     var cards by remember { mutableStateOf<List<TelecomCard>>(emptyList()) }
     var catalogError by remember { mutableStateOf<String?>(null) }
@@ -78,6 +79,13 @@ fun ApplyForCardScreen(pendingOfferLink: String?, onOfferConsumed: () -> Unit) {
             .fold(
                 onSuccess = { (credential, configurationId) ->
                     credentialStore.save(configurationId, credential.serialized)
+                    credentialHistoryStore.append(
+                        configurationId,
+                        CredentialHistoryEvent.Added(
+                            timestampUnixMillis = System.currentTimeMillis(),
+                            credentialDisplayName = TELECOM_CARD_DISPLAY_NAMES[configurationId] ?: credential.credentialType,
+                        ),
+                    )
                     PendingCardApplicationStore.clear(context)
                     pending = null
                     resultMessage = "Received and stored: ${credential.credentialType}"

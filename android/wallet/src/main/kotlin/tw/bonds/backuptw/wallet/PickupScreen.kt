@@ -67,6 +67,7 @@ private sealed interface PickupStage {
 fun PickupScreen() {
     val context = LocalContext.current
     val credentialStore = remember { CredentialStore(context) }
+    val credentialHistoryStore = remember { CredentialHistoryStore(context) }
 
     var stage by remember { mutableStateOf<PickupStage>(PickupStage.LoadingCatalog) }
     var statusLines by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -149,7 +150,7 @@ fun PickupScreen() {
 
             is PickupStage.Generating -> ProgressStage("Building the presentation…") {
                 LaunchedEffect(Unit) {
-                    PickupClient.presentAndGenerate(current.context, credentialStore) { statusLines = statusLines + it }
+                    PickupClient.presentAndGenerate(current.context, credentialStore, credentialHistoryStore) { statusLines = statusLines + it }
                         .fold(
                             onSuccess = { stage = PickupStage.Barcode(it) },
                             onFailure = {

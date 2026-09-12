@@ -64,6 +64,7 @@ private const val TRUST_LIST_URL = "https://frontend.wallet.gov.tw/api/did?size=
 fun DeveloperToolsScreen(onOpenFixtureDemo: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val credentialStore = remember { CredentialStore(context) }
+    val credentialHistoryStore = remember { CredentialHistoryStore(context) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
@@ -83,6 +84,7 @@ fun DeveloperToolsScreen(onOpenFixtureDemo: () -> Unit, onBack: () -> Unit) {
         )
         KeystoreSmokeTest()
         StorageSmokeTest(credentialStore)
+        CredentialHistorySmokeTest(credentialHistoryStore)
         TrustListSmokeTest()
 
         HorizontalDivider()
@@ -289,6 +291,34 @@ private fun StorageSmokeTest(credentialStore: CredentialStore) {
             }.fold(onSuccess = { it }, onFailure = { "Failed: ${it.message}" })
         }) {
             Text("Save + reload an encrypted file")
+        }
+        result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+/** A dedicated test id, isolated from any real telecom card's history file - never shown on `HomeScreen`'s card stack. */
+private const val HISTORY_SMOKE_TEST_ID = "history-smoke-test"
+
+@Composable
+private fun CredentialHistorySmokeTest(credentialHistoryStore: CredentialHistoryStore) {
+    var result by remember { mutableStateOf<String?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Button(onClick = {
+            result = runCatching {
+                val now = System.currentTimeMillis()
+                credentialHistoryStore.append(HISTORY_SMOKE_TEST_ID, CredentialHistoryEvent.Added(now, "Smoke-test card"))
+                credentialHistoryStore.append(
+                    HISTORY_SMOKE_TEST_ID,
+                    CredentialHistoryEvent.Authorized(now + 1, "Smoke-test org", "Smoke test", "vc-123", "Name"),
+                )
+                val events = credentialHistoryStore.load(HISTORY_SMOKE_TEST_ID)
+                check(events.size == 2) { "expected 2 events, got ${events.size}" }
+                check(events[0] is CredentialHistoryEvent.Added) { "event 0 should be Added" }
+                check(events[1] is CredentialHistoryEvent.Authorized) { "event 1 should be Authorized" }
+                "Appended and reloaded 2 events from an encrypted file: round-trip matched."
+            }.fold(onSuccess = { it }, onFailure = { "Failed: ${it.message}" })
+        }) {
+            Text("Append + reload credential history events")
         }
         result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }

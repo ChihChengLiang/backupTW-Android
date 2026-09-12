@@ -2,6 +2,7 @@ package tw.bonds.backuptw.wallet
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,16 +39,18 @@ import androidx.compose.ui.unit.dp
  * (the source of truth for which type strings these are), kept here by
  * hand since there is no FFI-exported display name for a bare type
  * string. Presentation-only: nothing here makes a trust decision.
+ * Not `private` - `ApplyForCardScreen`/`CredentialHistoryScreen` reuse
+ * it too, rather than keeping their own copies.
  */
-private val TELECOM_CARD_DISPLAY_NAMES =
+val TELECOM_CARD_DISPLAY_NAMES =
     mapOf(
         "96979933_name_phonel5_phonel3" to "中華電信門號電子卡",
         "97179430_fet_vc_prod" to "遠傳電信門號電子卡",
         "97176270_twmdiwvc_postpaid" to "台灣大哥大門號電子卡",
     )
 
-/** Short issuer label per card, for the card stack's subtitle line. */
-private val TELECOM_CARD_ISSUER_NAMES =
+/** Short issuer label per card, for the card stack's subtitle line - also reused by `CredentialHistoryScreen`. */
+val TELECOM_CARD_ISSUER_NAMES =
     mapOf(
         "96979933_name_phonel5_phonel3" to "中華電信",
         "97179430_fet_vc_prod" to "遠傳電信",
@@ -69,7 +72,7 @@ private val CARD_HEIGHT = 172.dp
 private val CARD_PEEK = 64.dp
 
 @Composable
-fun HomeScreen(onOpenDeveloperTools: () -> Unit) {
+fun HomeScreen(onOpenDeveloperTools: () -> Unit, onOpenCredential: (String) -> Unit) {
     val context = LocalContext.current
     val credentialStore = remember { CredentialStore(context) }
     val storedIds by remember { mutableStateOf(credentialStore.allIds()) }
@@ -94,7 +97,7 @@ fun HomeScreen(onOpenDeveloperTools: () -> Unit) {
             if (orderedIds.isEmpty()) {
                 Text("None yet - use the Add tab to apply for a card.", style = MaterialTheme.typography.bodyMedium)
             } else {
-                CredentialCardStack(orderedIds)
+                CredentialCardStack(orderedIds, onOpenCard = onOpenCredential)
             }
         }
 
@@ -112,7 +115,7 @@ fun HomeScreen(onOpenDeveloperTools: () -> Unit) {
  * visible strip. `ids` is already in stable front-to-back order.
  */
 @Composable
-private fun CredentialCardStack(ids: List<String>) {
+private fun CredentialCardStack(ids: List<String>, onOpenCard: (String) -> Unit) {
     val stackHeight = CARD_HEIGHT + CARD_PEEK * (ids.size - 1)
     Box(modifier = Modifier.fillMaxWidth().height(stackHeight)) {
         ids.forEachIndexed { index, id ->
@@ -125,6 +128,7 @@ private fun CredentialCardStack(ids: List<String>) {
                         .offset(y = CARD_PEEK * index)
                         .height(CARD_HEIGHT)
                         .background(color, RoundedCornerShape(18.dp))
+                        .clickable { onOpenCard(id) }
                         .padding(20.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
