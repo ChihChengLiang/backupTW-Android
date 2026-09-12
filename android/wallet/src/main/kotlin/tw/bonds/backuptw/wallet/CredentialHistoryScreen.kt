@@ -35,10 +35,12 @@ private fun formatTimestamp(unixMillis: Long): String =
 /**
  * One credential's own activity log - matches the official TWDIW app's
  * "Credential History" screen. Reached by tapping a card in `HomeScreen`'s
- * stack; the primary screen for that tap (not a picker).
+ * stack; the primary screen for that tap (not a picker) - `onOpenDetails`
+ * is one link off of it, matching the official app having both as
+ * separate screens rather than one combined view.
  */
 @Composable
-fun CredentialHistoryScreen(credentialId: String, onBack: () -> Unit) {
+fun CredentialHistoryScreen(credentialId: String, onOpenDetails: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val events =
         remember(credentialId) {
@@ -63,6 +65,7 @@ fun CredentialHistoryScreen(credentialId: String, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                TextButton(onClick = onOpenDetails) { Text("Credential Details") }
             }
         }
 

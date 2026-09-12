@@ -84,6 +84,7 @@ private sealed interface Overlay {
     data object DeveloperTools : Overlay
     data object FixtureDemo : Overlay
     data class CredentialHistory(val credentialId: String) : Overlay
+    data class CredentialDetails(val credentialId: String) : Overlay
 }
 
 @Composable
@@ -148,7 +149,16 @@ fun WalletApp(deepLink: Uri?, onDeepLinkConsumed: () -> Unit) {
                     )
                 Overlay.FixtureDemo -> FixtureDemoScreen(onBack = { overlay = null })
                 is Overlay.CredentialHistory ->
-                    CredentialHistoryScreen(credentialId = current.credentialId, onBack = { overlay = null })
+                    CredentialHistoryScreen(
+                        credentialId = current.credentialId,
+                        onOpenDetails = { overlay = Overlay.CredentialDetails(current.credentialId) },
+                        onBack = { overlay = null },
+                    )
+                is Overlay.CredentialDetails ->
+                    CredentialDetailsScreen(
+                        credentialId = current.credentialId,
+                        onBack = { overlay = Overlay.CredentialHistory(current.credentialId) },
+                    )
                 null ->
                     when (currentTab) {
                         NavTab.Credentials ->
