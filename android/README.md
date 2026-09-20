@@ -1,33 +1,29 @@
-# android/ — dev harnesses, not the app shell
+# android/ — the app (`wallet/`) plus a throwaway ZK harness (`app/`)
 
-Two Gradle modules, neither of which is **the** Phase 4 Android app shell
-described in `docs/2026-09-05-decisions-and-roadmap.md`:
+Two Gradle modules:
 
-- **`app/` (`zkharness`)** — Phase 1's validation harness. Proves the
-  OpenACAge Mopro ZK bindings work when loaded and run inside a real
-  Android runtime.
-- **`wallet/`** — a fixture-driven proof that `core/`'s hand-written Rust,
-  exposed through UniFFI, works end-to-end on Android: one screen, four
-  sections, no navigation, no storage, no design system. (1) generates a
-  `did:key` identity and shows both spellings; (2) parses a bundled
-  fixture TWDIW credential offer and trust-list page and runs the three
-  issuer-authorization gates; (3) generates an in-memory P-256 key
-  (`HolderKey.kt` — real ECDSA signing via the JCA `Signature` API, DER→raw
-  `r ‖ s` conversion, same shape real Android Keystore signing will need)
-  and builds/signs a real OID4VCI proof JWT; (4) reads and cryptographically
-  verifies a bundled fixture TWDIW SD-JWT credential and displays its
-  disclosed claims. See `core/src/ffi.rs`'s doc comment for why keys
-  throughout are ephemeral/in-memory (Keystore-backed generation, the real
-  design, needs a trait/callback boundary this doesn't build yet) and
-  `Fixtures.kt` for why nothing here makes a live network call (no TWDIW
-  sandbox endpoint is wired up - the three steps are proven independently
-  against bundled data, not chained into one continuous live flow).
+- **`wallet/`** — the real app shell (package `tw.bonds.backuptw.wallet`,
+  see `HANDOFF.md` at the repo root for the current feature/UI state).
+  Real navigation (a 3-tab bottom bar - Credentials/Add/Present - plus
+  overlay screens for Developer Tools, Credential History, and Credential
+  Details), real encrypted on-device storage (`CredentialStore`,
+  `CredentialHistoryStore`, `TrustSnapshotStore`, all `EncryptedFile`-
+  backed), and a real design system (`Theme.kt`'s `BackupTWTheme`, a pink
+  Material3 color scheme + hand-drawn Canvas icons - no icon library
+  dependency). The two live flows (telecom-card receive, 7-Eleven pickup)
+  are real network+crypto end to end; `DeveloperToolsScreen` holds
+  infrastructure smoke tests and the fixture-only regression demo
+  (`FixtureDemoScreen`) off the primary navigation.
+- **`app/` (`zkharness`)** — a standalone validation harness, unrelated to
+  `wallet/`. Proves the OpenACAge Mopro ZK bindings work when loaded and
+  run inside a real Android runtime; not part of the app shell and not
+  built on the same schedule as `wallet/`.
 
-When Phase 4 starts the real app shell, expect both modules' package
-names, `minSdk`, and structure to be revisited from scratch per the open
-question in the roadmap doc ("Exact Android minSdk/target SDK, package
-name, and module layout within android/ — deferred to Phase 0 execution").
-Nothing here should be read as having pre-decided any of that.
+`minSdk`/`targetSdk`/package naming are settled (see each module's
+`build.gradle.kts`) - the "deferred to Phase 0" language in
+`docs/2026-09-05-decisions-and-roadmap.md` describing this as still
+undecided is itself stale; that doc is a point-in-time planning snapshot,
+not a live source of truth (see the root README's note on `docs/`).
 
 ## `wallet/`: regenerating the native library + bindings
 
